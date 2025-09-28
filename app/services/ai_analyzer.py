@@ -1,21 +1,20 @@
-# Kita butuh spaCy untuk Natural Language Processing (NLP) dan Scikit-learn untuk machine learning.
-
+from typing import Dict, List, Union
 import spacy
 import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import pprint # Untuk print dictionary dengan rapi saat testing
+import pprint
+from spacy.language import Language
 
-# Muat model bahasa Inggris dari spaCy
-# Lakukan ini di luar fungsi agar model hanya dimuat sekali
+# Muat model bahasa Inggris dari spaCy - pindahkan ke bagian atas sebelum fungsi
 try:
-    nlp = spacy.load('en_core_web_sm')
+    nlp: Language = spacy.load('en_core_web_sm')
 except OSError:
     print("Model 'en_core_web_sm' tidak ditemukan. Jalankan 'python -m spacy download en_core_web_sm'")
     nlp = None
 
 # Daftar sederhana kata kunci skill untuk dicari
-SKILL_KEYWORDS = [
+SKILL_KEYWORDS: List[str] = [
     'python', 'java', 'c++', 'javascript', 'react', 'reactjs', 'node.js', 'nodejs',
     'flask', 'django', 'spring boot', 'html', 'css', 'tailwind',
     'sql', 'mysql', 'postgresql', 'mongodb', 'database',
@@ -24,97 +23,153 @@ SKILL_KEYWORDS = [
     'digital marketing', 'content marketing', 'sem', 'google analytics'
 ]
 
-def parse_candidate_info(text):
+def parse_candidate_info(text: str) -> Dict[str, Union[str, List[str], None]]:
     """
     Mengekstrak informasi terstruktur dari teks CV mentah.
-
+    
     Args:
         text (str): Teks lengkap dari CV.
-
+        
     Returns:
-        dict: Dictionary berisi informasi yang diekstrak.
+        Dict[str, Union[str, List[str], None]]: Dictionary berisi informasi yang diekstrak.
     """
     if not nlp:
-        return {"error": "Model spaCy tidak dimuat."}
+        return {"error": "Model spaCy tidak dimuat"}
 
-    # Ubah semua teks menjadi huruf kecil untuk memudahkan pencarian
     text_lower = text.lower()
-    
-    # Gunakan spaCy untuk memproses teks
     doc = nlp(text)
     
-    # --- Ekstraksi Informasi ---
-    extracted_data = {
+    extracted_data: Dict[str, Union[str, List[str], None]] = {
         "name": None,
         "email": None,
         "phone": None,
         "skills": []
     }
 
-    # 1. Ekstraksi Nama menggunakan NER (Named Entity Recognition)
+    # Ekstraksi Nama menggunakan NER
     for ent in doc.ents:
         if ent.label_ == 'PERSON' and not extracted_data['name']:
             extracted_data['name'] = ent.text
-            break # Ambil nama orang pertama yang ditemukan
+            break
 
-    # 2. Ekstraksi Email menggunakan Regex
-    match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
-    if match:
-        extracted_data['email'] = match.group(0)
+    # Ekstraksi Email
+    if email_match := re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text):
+        extracted_data['email'] = email_match.group(0)
 
-    # 3. Ekstraksi Nomor Telepon menggunakan Regex
-    # Pola ini mencoba menangkap berbagai format nomor telepon Indonesia
-    match = re.search(r'(\+62|0)8[1-9][0-9]{7,10}\b', text)
-    if match:
-        extracted_data['phone'] = match.group(0)
+    # Ekstraksi Nomor Telepon
+    if phone_match := re.search(r'(\+62|0)8[1-9][0-9]{7,10}\b', text):
+        extracted_data['phone'] = phone_match.group(0)
         
-    # 4. Ekstraksi Skills menggunakan Keyword Matching
-    found_skills = set()
-    for keyword in SKILL_KEYWORDS:
-        if keyword in text_lower:
-            found_skills.add(keyword.title()) # Simpan dengan huruf kapital di awal
-    extracted_data['skills'] = list(found_skills)
+    # Ekstraksi Skills
+    found_skills = {keyword.title() for keyword in SKILL_KEYWORDS if keyword in text_lower}
+    extracted_data['skills'] = sorted(list(found_skills))
 
     return extracted_data
 
-def calculate_match_score(cv_text, job_desc_text):
+def calculate_match_score(cv_text: str, job_desc_text: str) -> float:
     """
     Menghitung skor kecocokan antara teks CV dan deskripsi pekerjaan.
-
+    
     Args:
-        cv_text (str): Teks lengkap dari CV.
-        job_desc_text (str): Teks lengkap dari deskripsi pekerjaan.
-
+        cv_text (str): Teks dari konten CV.
+        job_desc_text (str): Teks dari deskripsi pekerjaan.
+        
     Returns:
-        float: Skor kecocokan dalam bentuk persentase (0-100).
+        float: Skor kecocokan dalam persentase (0-100).
+        
+    Raises:
+        ValueError: Jika input teks kosong atau tidak valid.
     """
-    if not cv_text or not job_desc_text:
+    # Validasi input
+    if not isinstance(cv_text, str) or not isinstance(job_desc_text, str):
+        raise ValueError("Input harus berupa string")
+        
+    if not cv_text.strip() or not job_desc_text.strip():
         return 0.0
 
-    # Gabungkan kedua teks ke dalam satu list untuk dianalisis
-    documents = [cv_text, job_desc_text]
+    try:
+        # Preprocessing dokumen
+        documents: List[str] = [cv_text, job_desc_text]
+        tfidf: TfidfVectorizer = TfidfVectorizer(stop_words='english')
+        
+        # Transform dokumen ke matrix TF-IDF
+        tfidf_matrix = tfidf.fit_transform(documents)
+        
+        # Hitung cosine similarity
+        cosine_sim: np.ndarray = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+        
+        # Konversi ke persentase dan bulatkan
+        match_score: float = float(cosine_sim[0][0]) * 100
+        return round(match_score, 2)
+        
+    except Exception as e:
+        print(f"Error dalam perhitungan skor: {str(e)}")
+        return 0.0
 
-    # Buat objek TF-IDF Vectorizer
-    # stop_words='english' akan menghapus kata umum dalam bahasa Inggris
-    tfidf = TfidfVectorizer(stop_words='english')
+def check_ats_friendliness(text: str) -> Dict[str, Union[Dict[str, bool], List[str]]]:
+    """
+    Melakukan pengecekan dasar keramahan ATS pada teks CV.
+    
+    Args:
+        text (str): Teks dari konten CV.
+        
+    Returns:
+        Dict: Hasil pengecekan ATS.
+    """
+    text_lower = text.lower()
+    return {
+        "common_sections": {
+            "experience": "pengalaman kerja" in text_lower or "experience" in text_lower,
+            "education": "pendidikan" in text_lower or "education" in text_lower,
+            "skills": "keterampilan" in text_lower or "skills" in text_lower
+        },
+        "contact_info": {
+            "email_found": bool(re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)),
+            "phone_found": bool(re.search(r'(\+62|0)8[1-9][0-9]{7,10}\b', text))
+        },
+        "file_format_notes": [
+            "Pastikan file tidak menggunakan format dua kolom.",
+            "Hindari penggunaan gambar, grafik, atau ikon yang berlebihan."
+        ]
+    }
 
-    # Hitung matriks TF-IDF
-    tfidf_matrix = tfidf.fit_transform(documents)
+def analyze_keywords(cv_text: str, job_desc_text: str) -> Dict[str, Union[List[str], str]]:
+    """
+    Menganalisis dan membandingkan kata kunci antara CV dan deskripsi pekerjaan.
+    
+    Args:
+        cv_text (str): Teks dari konten CV.
+        job_desc_text (str): Teks dari deskripsi pekerjaan.
+        
+    Returns:
+        Dict: Hasil analisis kata kunci.
+    """
+    if not nlp:
+        return {"error": "Model spaCy tidak dimuat"}
 
-    # Hitung cosine similarity antara vektor pertama (CV) dan vektor kedua (Job Desc)
-    cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+    cv_text_lower = cv_text.lower()
+    doc = nlp(job_desc_text)
+    
+    # Menggunakan set comprehension untuk efisiensi
+    job_keywords = {
+        token.text.lower() for token in doc 
+        if token.pos_ in ['NOUN', 'PROPN'] 
+        and len(token.text) > 2 
+        and token.text.lower() not in ['experience', 'knowledge', 'responsibilities', 'requirements']
+    }
+    
+    # Menambahkan skill dari daftar jika ada di deskripsi pekerjaan
+    job_keywords.update(skill for skill in SKILL_KEYWORDS if skill in job_desc_text.lower())
 
-    # Skor adalah nilai di dalam matriks hasil (misal: [[0.85]])
-    score = cosine_sim[0][0]
+    matched_keywords = sorted({kw for kw in job_keywords if kw in cv_text_lower})
+    missing_keywords = sorted({kw for kw in job_keywords if kw not in cv_text_lower})
 
-    # Ubah menjadi persentase dan bulatkan 2 angka di belakang koma
-    return round(score * 100, 2)
+    return {
+        "matched_keywords": matched_keywords,
+        "missing_keywords": missing_keywords
+    }
 
-# =================================================================
-# BAGIAN UNTUK TESTING
-# =================================================================
 if __name__ == '__main__':
-    # Contoh teks CV untuk diuji
     sample_cv_text = """
     Budi Santoso
     A passionate software engineer based in Jakarta.
@@ -129,25 +184,30 @@ if __name__ == '__main__':
     - Programming: Java, Python, JavaScript
     - Frameworks: ReactJS, Flask
     - Databases: MySQL
+    
+    Education:
+    - S1 Teknik Informatika, Universitas Gadjah Mada
     """
-    
-    print("--- Menguji Fungsi Parsing Info Kandidat ---")
-    parsed_info = parse_candidate_info(sample_cv_text)
-    
-    print("Hasil Parsing:")
-    pprint.pprint(parsed_info)
 
-    print("\n" + "="*30 + "\n")
-    
-    # --- Tambahkan bagian tes untuk fungsi scoring ---
-    print("--- Menguji Fungsi Scoring Kecocokan ---")
     sample_job_description = """
     We are hiring a Python Developer.
     Must have experience with Flask framework and REST API development.
-    Knowledge of SQL is required. ReactJS is a plus.
+    Knowledge of SQL is required. ReactJS is a plus. Docker is nice to have.
     """
 
+    print("--- 1. Menguji Fungsi Parsing Info Kandidat ---")
+    pprint.pprint(parse_candidate_info(sample_cv_text))
+    print("\n" + "="*40 + "\n")
+
+    print("--- 2. Menguji Fungsi Scoring Kecocokan ---")
     score = calculate_match_score(sample_cv_text, sample_job_description)
-    print(f"Teks CV:\n{sample_cv_text[:100]}...")
-    print(f"\nDeskripsi Pekerjaan:\n{sample_job_description[:100]}...")
-    print(f"\nSKOR KECOCOKAN: {score}%")
+    print(f"SKOR KECOCOKAN: {score}%")
+    print("\n" + "="*40 + "\n")
+
+    print("--- 3. Menguji Fungsi ATS Check ---")
+    pprint.pprint(check_ats_friendliness(sample_cv_text))
+    print("\n" + "="*40 + "\n")
+
+    print("--- 4. Menguji Fungsi Analisis Keyword ---")
+    pprint.pprint(analyze_keywords(sample_cv_text, sample_job_description))
+    print("\n" + "="*40 + "\n")
