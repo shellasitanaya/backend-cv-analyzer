@@ -62,3 +62,55 @@ def save_candidate(job_id, data):
     conn.close()
 
     return last_id # Kembalikan ID kandidat baru
+
+def save_generated_cv(original_cv_id: int, data: dict) -> int:
+    """Menyimpan data CV yang di-generate ke tabel GeneratedCVs."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = """
+    INSERT INTO GeneratedCVs (
+        original_cv_id, template_name, version_number, storage_path
+    ) VALUES (%s, %s, %s, %s)
+    """
+    
+    values = (
+        original_cv_id,
+        data.get('template_name'),
+        data.get('version_number'),
+        data.get('storage_path')
+    )
+
+    cursor.execute(query, values)
+    conn.commit()
+    
+    last_id = cursor.lastrowid
+    
+    cursor.close()
+    conn.close()
+
+    return last_id
+
+def get_last_cv_version(original_cv_id: int) -> int:
+    """Mendapatkan nomor versi terakhir dari sebuah CV original."""
+    conn = get_db_connection()
+    # dictionary=True agar bisa akses kolom dengan nama, misal: result['max_version']
+    cursor = conn.cursor(dictionary=True)
+
+    query = """
+    SELECT MAX(version_number) as max_version 
+    FROM GeneratedCVs 
+    WHERE original_cv_id = %s
+    """
+    
+    cursor.execute(query, (original_cv_id,))
+    result = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    if result and result['max_version'] is not None:
+        return int(result['max_version'])
+    
+    # Jika belum ada versi sama sekali, kembalikan 0
+    return 0
