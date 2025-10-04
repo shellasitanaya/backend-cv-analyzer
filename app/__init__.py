@@ -2,7 +2,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from config import Config
 from pymysql import connect
-from .extensions import db, migrate
+from .extensions import db, migrate, jwt
 from .models import *
 
 def create_app():
@@ -14,6 +14,7 @@ def create_app():
     create_database_if_not_exists()
     db.init_app(app)
     migrate.init_app(app, db)
+    jwt.init_app(app)
 
     from .routes.hr_routes import hr_bp
     app.register_blueprint(hr_bp)
