@@ -15,17 +15,14 @@ if not os.path.exists(UPLOAD_FOLDER):
 
 @hr_bp.route('/jobs/<int:job_id>/upload', methods=['POST'])
 def upload_and_process_cvs(job_id):
-    if 'cv_files' not in request.files:
-        return jsonify({"error": "Tidak ada bagian file (cv_files) dalam request"}), 400
-
+    # Bagian ini tetap sama (mengambil file, data job, inisialisasi report)
     cv_files = request.files.getlist('cv_files')
-    job_description = request.form.get('job_description', '')
-    
-    if not job_description or not cv_files or cv_files[0].filename == '':
-        return jsonify({"error": "Deskripsi pekerjaan dan file CV tidak boleh kosong"}), 400
-
-    processed_count = 0
-    errors = []
+    job = database.get_job_by_id(job_id)
+    if not job:
+        return jsonify({"error": "Job ID tidak ditemukan"}), 404
+    job_requirements = {'min_gpa': job.get('min_gpa'), 'min_experience': job.get('min_experience')}
+    job_description = job.get('job_description', '')
+    report = {"passed_count": 0, "rejected_count": 0, "rejection_details": {}}
 
     for cv_file in cv_files:
         filename = secure_filename(cv_file.filename)
@@ -33,44 +30,64 @@ def upload_and_process_cvs(job_id):
         
         try:
             cv_file.save(file_path)
-
-            # 1. Panggil Servis Parser
             cv_text = extract_text(file_path)
-            if not cv_text:
-                raise ValueError("Teks tidak dapat diekstrak.")
 
-            # 2. Panggil Servis AI Analyzer
+            # === PERUBAHAN POIN 1: Panggil SATU fungsi saja ===
+            # Kita tidak lagi memanggil extract_prescreen_data.
+            # parse_candidate_info sekarang mengambil SEMUA data (nama, email, ipk, pengalaman).
             structured_profile = parse_candidate_info(cv_text)
-            score = calculate_match_score(cv_text, job_description)
-
-            # Siapkan data untuk disimpan
-            candidate_data = {
-                'original_filename': filename,
-                'storage_path': file_path, # Anda bisa ganti ini dengan path permanen nanti
-                'name': structured_profile.get('name'),
-                'email': structured_profile.get('email'),
-                'phone': structured_profile.get('phone'),
-                'score': score,
-                'structured_profile': structured_profile # Ini akan diubah jadi JSON
-            }
             
-            # 3. Panggil Servis Database
-            database.save_candidate(job_id, candidate_data)
-            processed_count += 1
+            rejection_reason = None
+            
+            # === PERUBAHAN POIN 2: Filter menggunakan hasil structured_profile ===
+            candidate_gpa = structured_profile.get('gpa')
+            candidate_experience = structured_profile.get('total_experience')
 
+            # Filter berdasarkan IPK
+            if job_requirements['min_gpa'] and (not candidate_gpa or candidate_gpa < job_requirements['min_gpa']):
+                rejection_reason = f"GPA below minimum requirement ({job_requirements['min_gpa']})"
+
+            # Filter berdasarkan Pengalaman
+            elif job_requirements.get('min_experience') and (candidate_experience is None or candidate_experience < job_requirements.get('min_experience')):
+                rejection_reason = f"Experience below minimum requirement ({job_requirements.get('min_experience')} years)"
+
+            if rejection_reason:
+                # KANDIDAT DITOLAK
+                report['rejected_count'] += 1
+                report['rejection_details'][rejection_reason] = report['rejection_details'].get(rejection_reason, 0) + 1
+                
+                # === PERUBAHAN POIN 3: Data yang dikirim ke database ===
+                database.save_candidate(job_id, {
+                    'original_filename': filename,
+                    'name': structured_profile.get('name'),
+                    'email': structured_profile.get('email'),
+                    'phone': structured_profile.get('phone'),
+                    'structured_profile': structured_profile, # Kirim SEMUA hasil parsing
+                    'status': 'rejected', 
+                    'rejection_reason': rejection_reason
+                })
+            else:
+                # KANDIDAT LOLOS
+                report['passed_count'] += 1
+                score = calculate_match_score(cv_text, job_description)
+
+                # === PERUBAHAN POIN 3: Data yang dikirim ke database ===
+                database.save_candidate(job_id, {
+                    'original_filename': filename,
+                    'name': structured_profile.get('name'),
+                    'email': structured_profile.get('email'),
+                    'phone': structured_profile.get('phone'),
+                    'score': score,
+                    'structured_profile': structured_profile, # Kirim SEMUA hasil parsing
+                    'status': 'passed_filter'
+                })
         except Exception as e:
-            errors.append(f"Gagal memproses file {filename}: {str(e)}")
+            print(f"Error processing {filename}: {e}")
         finally:
-            # Selalu hapus file sementara setelah selesai diproses
             if os.path.exists(file_path):
                 os.remove(file_path)
-
-    return jsonify({
-        "message": "Pemrosesan CV selesai.",
-        "success_count": processed_count,
-        "error_count": len(errors),
-        "errors": errors
-    }), 200
+    
+    return jsonify(report), 200
 
 
 @hr_bp.route('/jobs/<int:job_id>/candidates', methods=['GET'])
@@ -87,3 +104,12 @@ def get_candidate_detail(candidate_id):
     # Di sini Anda akan membuat fungsi database.get_candidate_by_id(candidate_id)
     # Untuk sekarang, kita bisa fokus pada daftar ranking dulu.
     pass
+
+@hr_bp.route('/jobs', methods=['GET'])
+def get_jobs_list():
+    """Endpoint untuk mengambil semua data pekerjaan."""
+    try:
+        jobs = database.get_all_jobs()
+        return jsonify(jobs)
+    except Exception as e:
+        return jsonify({"error": "Gagal mengambil daftar pekerjaan", "details": str(e)}), 500
