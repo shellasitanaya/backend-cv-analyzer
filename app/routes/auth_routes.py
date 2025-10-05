@@ -1,33 +1,19 @@
 from flask import Blueprint, request, jsonify
-from werkzeug.security import check_password_hash
-from flask_jwt_extended import create_access_token
-from app.models.user import User
-from app.extensions import db
+from app.services.auth import AuthService
 
-auth_bp = Blueprint("auth_bp", __name__, url_prefix="/api/auth")
+auth_bp = Blueprint("auth", __name__)
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
     data = request.get_json()
     email = data.get("email")
     password = data.get("password")
+    selected_role = data.get("role")
 
-    user = User.query.filter_by(email=email).first()
+    token, error = AuthService.authenticate_user(email, password, selected_role)
+    if not token:
+        return jsonify({
+            "message": error
+        }), 401
 
-    if not user or not check_password_hash(user.password_hash, password):
-        return jsonify({"error": "Invalid email or password"}), 401
-
-    access_token = create_access_token(
-        identity={"id": user.id, "email": user.email, "role": user.role}
-    )
-
-    return jsonify({
-        "message": "Login successful",
-        "access_token": access_token,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "role": user.role,
-            "full_name": user.full_name
-        }
-    }), 200
+    return jsonify({"access_token": token}), 200
