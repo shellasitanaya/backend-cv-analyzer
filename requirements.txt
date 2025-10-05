@@ -60,3 +60,4 @@ wrapt==1.17.3
 Flask-SQLAlchemy
 Flask-Migrate
 Flask-Bcrypt
+Flask-JWT-Extended
