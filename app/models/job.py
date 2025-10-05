@@ -1,11 +1,12 @@
 from app.extensions import db
 from datetime import datetime
+import uuid
 
 class Job(db.Model):
     __tablename__ = "jobs"
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    hr_user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    hr_user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     job_title = db.Column(db.String(255))
     job_location = db.Column(db.String(255))
     job_description = db.Column(db.Text)

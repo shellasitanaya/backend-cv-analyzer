@@ -1,11 +1,12 @@
 from app.extensions import db
 from datetime import datetime
+import uuid
 
 class CV(db.Model):
     __tablename__ = "cvs"
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     cv_title = db.Column(db.String(255))
     original_filename = db.Column(db.String(255))
     storage_path = db.Column(db.String(255), nullable=False)
