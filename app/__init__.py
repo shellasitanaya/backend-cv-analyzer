@@ -2,8 +2,11 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from config import Config
 from pymysql import connect
-from .extensions import db, migrate, jwt
+from .extensions import *
 from .models import *
+from .routes.hr_routes import hr_bp
+from app.routes.auth_routes import auth_bp
+from app.database.seed.seed_all import seed_all  
 
 def create_app():
     app = Flask(__name__)
@@ -12,12 +15,18 @@ def create_app():
     # CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
     
     create_database_if_not_exists()
+
+    # extensions initialization
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    bcrypt.init_app(app)
 
-    from .routes.hr_routes import hr_bp
+    # blueprints registration
     app.register_blueprint(hr_bp)
+    app.register_blueprint(auth_bp, url_prefix="/api/auth")
+
+    app.cli.add_command(seed_all)
 
     return app
 
