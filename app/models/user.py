@@ -1,6 +1,8 @@
 from ..extensions import db 
 from datetime import datetime
 import uuid
+from sqlalchemy.dialects.mysql import JSON  # tambahkan ini
+
 
 class User(db.Model):
     __tablename__ = "users"

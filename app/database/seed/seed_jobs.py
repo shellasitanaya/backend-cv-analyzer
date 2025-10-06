@@ -60,7 +60,14 @@ def seed():
             created_at=datetime.utcnow(),
         ),
     ]
+    
+    for job in jobs:
+        existing_job = Job.query.filter_by(job_title=job.job_title).first()
+        if existing_job:
+            print(f"⚠️ Job '{job.job_title}' already exists. Skipping insert.")
+            continue
+        db.session.add(job)
 
-    db.session.bulk_save_objects(jobs)
+    # db.session.bulk_save_objects(jobs)
     db.session.commit()
     print("✅ Jobs seeded successfully!")

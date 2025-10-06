@@ -26,7 +26,6 @@ def create_app():
     app.register_blueprint(hr_bp)
     app.register_blueprint(js_bp) 
 
-    app.register_blueprint(hr_bp)
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
 
     app.cli.add_command(seed_all)
