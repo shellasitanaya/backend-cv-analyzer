@@ -3,10 +3,10 @@ from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
 from flask_bcrypt import Bcrypt
 
-
 db = SQLAlchemy()
 migrate = Migrate()
 
 # login manager for handling JWTs
 jwt = JWTManager()
+
 bcrypt = Bcrypt()

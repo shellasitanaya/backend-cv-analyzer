@@ -1,7 +1,7 @@
 from app.extensions import db
 from app.models import User
 from datetime import datetime
-from werkzeug.security import generate_password_hash
+from flask_bcrypt import generate_password_hash
 
 def seed():
     print("🌱 Seeding users...")
