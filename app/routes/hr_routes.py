@@ -5,6 +5,7 @@ import os
 from app.services.cv_parser import extract_text
 from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
 from app import database
+from app.services.talent_search import search_candidates  # ✅ Tambahan
 
 
 hr_bp = Blueprint('hr_api', __name__, url_prefix='/api/hr')
@@ -98,6 +99,35 @@ def get_ranked_candidates(job_id):
     except Exception as e:
         return jsonify({"error": "Gagal mengambil data dari database", "details": str(e)}), 500
 
+# ✅ Tambahan: endpoint search kandidat
+@hr_bp.route('/candidates/search', methods=['GET'])
+def search_candidates_endpoint():
+    try:
+        keyword = request.args.get('q', '')
+        if not keyword:
+            return jsonify({
+                "status": "success",
+                "message": "Keyword kosong, tidak ada hasil",
+                "data": []
+            }), 200
+
+        results = search_candidates(keyword)
+
+        return jsonify({
+            "status": "success",
+            "message": f"{len(results)} kandidat ditemukan untuk keyword '{keyword}'",
+            "data": results
+        }), 200
+
+    except Exception as e:
+        print("ERROR search_candidates:", e)
+        return jsonify({
+            "status": "error",
+            "message": "Terjadi kesalahan saat mencari kandidat",
+            "data": [],
+            "details": str(e)
+        }), 500
+
 # Endpoint untuk profil detail (lakukan hal yang sama)
 @hr_bp.route('/candidates/<int:candidate_id>', methods=['GET'])
 def get_candidate_detail(candidate_id):
@@ -113,3 +143,10 @@ def get_jobs_list():
         return jsonify(jobs)
     except Exception as e:
         return jsonify({"error": "Gagal mengambil daftar pekerjaan", "details": str(e)}), 500
+
+@hr_bp.route('/test', methods=['GET'])
+def test_connection():
+    return jsonify({
+        "status": "success",
+        "message": "Success ✅"
+    }), 200
