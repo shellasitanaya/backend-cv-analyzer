@@ -1,58 +1,90 @@
-# filename: cv_generator.py
-# location: backend-cv-analyzer/app/services/
 
 import os
-import uuid
+import json
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
+from app.models import Candidate
+from flask import current_app
+import openai
 
-# Tentukan base directory dari aplikasi
-# Ini akan mengarah ke folder 'backend-cv-analyzer'
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def create_cv_pdf(template_name: str, cv_data: dict) -> str:
+
+def enhance_with_ai(candidate_data):
     """
-    Merender data CV ke template HTML, mengonversinya menjadi PDF, dan menyimpannya.
-
-    Args:
-        template_name (str): Nama template yang akan digunakan (misal: "modern").
-        cv_data (dict): Data lengkap CV dari pengguna.
-
-    Returns:
-        str: Path relatif ke file PDF yang telah disimpan.
+    Gunakan OpenAI untuk memperhalus konten CV (summary, experience, skills, education)
     """
+    skills = candidate_data.get("skills") or ", ".join(
+        candidate_data.get("structured_profile_json", {}).get("hard_skills", [])
+    )
+
+    prompt = f"""
+    Kamu adalah asisten profesional penulis CV.
+    Tolong tulis ulang konten berikut agar lebih profesional, jelas, dan ATS-friendly.
+
+    === Informasi Kandidat ===
+    Nama: {candidate_data.get('extracted_name', '')}
+    Summary: {candidate_data.get('summary', '')}
+    Pengalaman: {candidate_data.get('experience', '')}
+    Skill: {skills}
+    Pendidikan: {candidate_data.get('education', '')}
+
+    Format jawaban kamu seperti ini:
+    {{
+        "summary": "...",
+        "experience": "...",
+        "skills": "...",
+        "education": "..."
+    }}
+    """
+
     try:
-        # 1. Setup Jinja2 Environment untuk memuat template
-        # Kita memberitahu Jinja2 di mana harus mencari template
-        template_dir = os.path.join(BASE_DIR, 'app', 'templates', 'cv')
-        env = Environment(loader=FileSystemLoader(template_dir), autoescape=True)
-        template = env.get_template(f'{template_name.lower()}.html')
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
 
-        # 2. Render HTML dari template dengan data yang diberikan
-        html_out = template.render(data=cv_data)
+        text = response.choices[0].message.content.strip()
+        try:
+            improved = json.loads(text)
+        except Exception:
+            improved = {"summary": text, "experience": "", "skills": skills, "education": ""}
 
-        # 3. Tentukan path dan nama file untuk output PDF
-        # Kita buat nama file unik agar tidak saling menimpa
-        unique_id = uuid.uuid4().hex[:8]
-        output_filename = f"cv_{cv_data['personal_info']['full_name'].replace(' ', '_')}_{template_name}_{unique_id}.pdf"
-        
-        # Simpan file PDF di dalam folder 'static' agar bisa diakses dari web
-        output_folder = os.path.join(BASE_DIR, 'app', 'static', 'generated_cvs')
-        os.makedirs(output_folder, exist_ok=True) # Buat folder jika belum ada
-        
-        output_path = os.path.join(output_folder, output_filename)
-
-        # 4. Konversi string HTML ke PDF menggunakan WeasyPrint
-        HTML(string=html_out).write_pdf(output_path)
-        
-        # 5. Kembalikan path relatif yang bisa digunakan untuk URL
-        # Contoh: 'app/static/generated_cvs/cv_John_Doe_modern_1234abcd.pdf'
-        # akan diubah menjadi '/static/generated_cvs/cv_John_Doe_modern_1234abcd.pdf'
-        relative_path = os.path.join('/static', 'generated_cvs', output_filename).replace('\\', '/')
-        
-        return relative_path
+        candidate_data.update(improved)
+        return candidate_data
 
     except Exception as e:
-        print(f"Error creating PDF: {e}")
-        # Jika ada error, kembalikan None
-        return None
+        print(f"⚠️ Error AI enhancement: {e}")
+        return candidate_data
+
+
+def build_cv(candidate_id):
+    """
+    Generate CV PDF berdasarkan template dan data dari Candidate
+    """
+    candidate = Candidate.query.filter_by(id=candidate_id).first()
+    if not candidate:
+        raise ValueError(f"Candidate with {candidate_id} ID not found")
+
+    candidate_data = candidate.__dict__.copy()
+    candidate_data.pop("_sa_instance_state", None)
+
+    candidate_data = enhance_with_ai(candidate_data)
+
+    template_dir = os.path.join(current_app.root_path, "template")
+    env = Environment(loader=FileSystemLoader(template_dir))
+    template = env.get_template("ats-friendly.html")
+    rendered_html = template.render(candidate=candidate_data)
+
+    output_dir = os.path.join(current_app.root_path, "generated")
+    os.makedirs(output_dir, exist_ok=True)
+
+    safe_name = candidate_data.get("extracted_name", f"candidate_{candidate_id}")
+    output_path = os.path.join(output_dir, f"{safe_name}_CV.pdf")
+
+    HTML(string=rendered_html).write_pdf(output_path)
+
+    print(f"✅ CV has successfully generated to {output_path}")
+    return output_path
+

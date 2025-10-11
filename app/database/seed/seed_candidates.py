@@ -25,6 +25,8 @@ def seed():
             structured_profile_json={
                 "hard_skills": ["Python", "HTML", "CSS", "SQL", "Flask"]
             },
+            education="Bachelor of Computer Science, University of Indonesia (2020-2024)",
+            experience="Backend Developer at ABC Corp (2023-2024)",
             status="passed_filter",
             uploaded_at=datetime.utcnow()
         ),
@@ -40,6 +42,8 @@ def seed():
             structured_profile_json={
                 "hard_skills": ["JavaScript", "React", "Node.js", "Flask"]
             },
+            education="Bachelor of Creative Media Communication, University of Surabaya (2018-2022)",
+            experience="Real Estate Agent (2021-2023)",
             status="processing",
             uploaded_at=datetime.utcnow()
         ),
@@ -55,6 +59,8 @@ def seed():
             structured_profile_json={
                 "hard_skills": ["JavaScript", "React", "Python", "HTML", "Flask"]
             },
+            education="Infor, UKP (2023-2027)",
+            experience="Full Time Monoploy Player (Dari Lahir)",
             status="processing",
             uploaded_at=datetime.utcnow()
         ),
