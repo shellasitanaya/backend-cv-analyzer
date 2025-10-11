@@ -15,6 +15,7 @@ def seed():
                 "Looking for a backend developer proficient in Python and Flask. "
                 "You will work with REST APIs, databases, and cloud integration."
             ),
+            min_gpa=3.00, 
             min_experience=2,
             max_experience=5,
             degree_requirements="Bachelor's in Computer Science",
@@ -41,6 +42,7 @@ def seed():
                 "Join our frontend team to build interactive web apps using React and Tailwind CSS. "
                 "Work closely with the backend and design teams to deliver high-quality UIs."
             ),
+            min_gpa=3.87, 
             min_experience=1,
             max_experience=4,
             degree_requirements="Bachelor's in Information Technology",

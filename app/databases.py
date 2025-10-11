@@ -1,6 +1,7 @@
 import mysql.connector
 from flask import current_app
 import json
+import uuid
 
 def get_db_connection():
     """Membuat koneksi baru ke database."""
@@ -12,12 +13,11 @@ def get_db_connection():
     )
     return conn
 
-# Contoh fungsi untuk mengambil data dari database
-# VERSI BARU YANG BENAR
-def get_all_candidates_for_job(job_id):
+
+def get_all_candidates_for_job(job_id, filters={}):
     """
-    Mengambil kandidat yang lolos filter untuk sebuah job, 
-    termasuk data spesifik dari kolom JSON.
+    Mengambil kandidat yang lolos dengan filter dinamis, 
+    termasuk semua data yang dibutuhkan oleh UI ranking.
     """
     conn = None
     cursor = None
@@ -25,21 +25,29 @@ def get_all_candidates_for_job(job_id):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         
-        # --- INI BAGIAN UTAMA YANG DIUBAH ---
-        query = """
-        SELECT 
-            id, 
-            extracted_name, 
-            match_score, 
-            status,
-            JSON_EXTRACT(structured_profile_json, '$.gpa') AS gpa,
-            JSON_EXTRACT(structured_profile_json, '$.experience') AS experience
-        FROM Candidates 
-        WHERE job_id = %s AND status = 'passed_filter'
-        ORDER BY match_score DESC
-        """
+        query_parts = [
+            "SELECT",
+            "    id, extracted_name, extracted_email, match_score, status,",
+            "    JSON_EXTRACT(structured_profile_json, '$.gpa') AS gpa,",
+            "    JSON_EXTRACT(structured_profile_json, '$.experience') AS experience,",
+            "    JSON_EXTRACT(structured_profile_json, '$.education') AS education,",
+            "    JSON_EXTRACT(structured_profile_json, '$.skills') AS skills",
+            "FROM Candidates",
+            "WHERE job_id = %s AND status = 'passed_filter'"
+        ]
+        params = [job_id]
+
+        # (Logika filter dinamis Anda bisa ditambahkan di sini jika sudah ada)
+        # Contoh:
+        # if filters.get('min_gpa'):
+        #     query_parts.append("AND JSON_EXTRACT(structured_profile_json, '$.gpa') >= %s")
+        #     params.append(float(filters['min_gpa']))
         
-        cursor.execute(query, (job_id,))
+        query_parts.append("ORDER BY match_score DESC")
+        
+        final_query = " ".join(query_parts)
+        
+        cursor.execute(final_query, tuple(params))
         candidates = cursor.fetchall()
         return candidates
         
@@ -59,23 +67,22 @@ def save_candidate(job_id, data):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-
-        # Query INSERT sekarang mencakup kolom status dan rejection_reason
+        
+        candidate_id = str(uuid.uuid4())
+        
         query = """
         INSERT INTO Candidates (
-            job_id, original_filename, storage_path, extracted_name,
+            id, job_id, original_filename, storage_path, extracted_name,
             extracted_email, extracted_phone, match_score, 
             status, rejection_reason, structured_profile_json
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         
-        # Siapkan data structured_profile untuk diubah menjadi string JSON
-        # Jika tidak ada, gunakan objek JSON kosong {}
         profile_data = data.get('structured_profile') or {}
         profile_json_string = json.dumps(profile_data)
 
-        # Siapkan semua nilai untuk dimasukkan ke query
         values = (
+            candidate_id,
             job_id,
             data.get('original_filename'),
             data.get('storage_path'),
@@ -83,8 +90,8 @@ def save_candidate(job_id, data):
             data.get('email'),
             data.get('phone'), 
             data.get('score'), # Akan NULL jika kandidat ditolak -> ga di analisis klo ga masuk kandidat
-            data.get('status', 'processing'), # Mengambil status dari data, defaultnya 'processing'
-            data.get('rejection_reason'), # Akan berisi alasan jika ditolak
+            data.get('status', 'processing'), # defaultnya 'processing'
+            data.get('rejection_reason'), 
             profile_json_string
         )
 
@@ -97,7 +104,7 @@ def save_candidate(job_id, data):
     except Exception as e:
         print(f"Database error in save_candidate: {e}")
         if conn:
-            conn.rollback() # Batalkan transaksi jika terjadi error
+            conn.rollback() 
         return None
 
     finally:
@@ -112,8 +119,6 @@ def get_all_jobs():
     cursor = None
     try:
         conn = get_db_connection()
-        # dictionary=True membuat hasil query menjadi format dictionary,
-        # yang bisa langsung di-jsonify
         cursor = conn.cursor(dictionary=True)
         
         query = "SELECT id, job_title, min_gpa, degree_requirements FROM Jobs ORDER BY created_at DESC"
@@ -124,16 +129,14 @@ def get_all_jobs():
         
     except Exception as e:
         print(f"Database error in get_all_jobs: {e}")
-        return [] # Kembalikan list kosong jika terjadi error
+        return [] 
     finally:
         if cursor:
             cursor.close()
         if conn:
             conn.close()
 
-# File: backend/app/database.py
 
-# ... (fungsi lainnya) ...
 def get_job_by_id(job_id):
     """Mengambil detail satu pekerjaan berdasarkan ID."""
     conn = get_db_connection()
