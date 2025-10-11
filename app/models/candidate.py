@@ -15,6 +15,9 @@ class Candidate(db.Model):
     match_score = db.Column(db.Numeric(5, 2))
     structured_profile_json = db.Column(db.JSON)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    education = db.Column(db.Text, nullable=True)
+    experience = db.Column(db.Text, nullable=True)
 
     status = db.Column(db.Enum("processing", "passed_filter", "rejected", name="candidate_status"), default="processing")
     rejection_reason = db.Column(db.String(255))

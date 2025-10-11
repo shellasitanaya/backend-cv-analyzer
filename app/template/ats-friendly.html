@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ candidate.extracted_name }} - Curriculum Vitae</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 40px;
+            max-width: 800px; /* Optional: better readability on wide screens */
+            margin-left: auto;
+            margin-right: auto;
+        }
+        /* -- Header Styles -- */
+        header {
+            text-align: center; /* Center align name and contact */
+            margin-bottom: 30px;
+        }
+        h1 {
+            margin: 0;
+            /* The border-bottom from the old code is REMOVED */
+        }
+        .subtitle { /* Added for job title */
+            margin-top: 5px;
+            font-size: 1.1em;
+            color: #555;
+        }
+        .contact-info {
+            margin-top: 5px;
+            color: #555;
+        }
+        
+        /* -- Section Styles -- */
+        .section {
+            margin-top: 30px;
+        }
+        h2 {
+            text-transform: uppercase; /* Makes text ALL CAPS */
+            border-bottom: 2px solid #333; /* The line you wanted */
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+        
+        /* -- Experience & Education Styles (Requires HTML change) -- */
+        .entry {
+            margin-bottom: 20px;
+        }
+        .entry-header {
+            display: flex; /* Key for alignment */
+            justify-content: space-between; /* Pushes items to ends */
+            align-items: baseline;
+        }
+        .entry-header h3 {
+            margin: 0;
+        }
+        .entry-header p {
+            margin: 0;
+            color: #555;
+            font-weight: bold;
+        }
+        .entry-subheader {
+            font-weight: bold;
+            margin-top: 2px;
+            margin-bottom: 8px;
+        }
+
+        ul {
+            padding-left: 20px;
+            margin-top: 5px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>{{ candidate.extracted_name | upper }}</h1>
+        <p class="contact-info">
+            {{ candidate.location or '' }} |
+            {{ candidate.extracted_email }} |
+            {{ candidate.extracted_phone or 'N/A' }} |
+            {{ candidate.linkedin_url or '' }}
+        </p>
+    </header>
+
+    {% if candidate.summary %}
+    <div class="section">
+        <h2>Professional Summary</h2>
+        <p>{{ candidate.summary }}</p>
+    </div>
+    {% endif %}
+
+    {% if candidate.experience %}
+    <div class="section">
+        <h2>Work Experience</h2>
+        {% for exp in candidate.experience %}
+        <div class="entry">
+            <div class="entry-header">
+                <h3>{{ exp.title }}</h3>
+                <p>{{ exp.start_date }} – {{ exp.end_date }}</p>
+            </div>
+            <p class="entry-subheader">{{ exp.company }}, {{ exp.location }}</p>
+            <ul>
+                {% for point in exp.description.split('\n') %}
+                <li>{{ point }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if candidate.education %}
+    <div class="section">
+        <h2>Education</h2>
+        {% for edu in candidate.education %}
+        <div class="entry">
+             <div class="entry-header">
+                <h3>{{ edu.degree }}</h3>
+                <p>Graduated: {{ edu.graduation_year }}</p>
+            </div>
+            <p class="entry-subheader">{{ edu.university }}, {{ edu.location }}</p>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if candidate.skills %}
+    <div class="section">
+        <h2>SKILLS</h2>
+        <ul>
+        {% for skill in candidate.skills.split(',') %}
+            <li>{{ skill.strip() }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+    
+    {% elif candidate.structured_profile_json and candidate.structured_profile_json.get('hard_skills') %}
+    <div class="section">
+        <h2>SKILLS</h2>
+        <ul>
+        {% for skill in candidate.structured_profile_json.get('hard_skills') %}
+            <li>{{ skill }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+
+    {% else %}
+        <div class="section">
+            <h2>SKILLS</h2>
+            <p>No skills information available.</p>
+        </div>
+    {% endif %}
+
+</body>
+</html>

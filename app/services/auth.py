@@ -1,5 +1,5 @@
 from flask_jwt_extended import create_access_token, decode_token
-from flask_bcrypt import check_password_hash
+from werkzeug.security import check_password_hash
 from datetime import timedelta
 from app.models.user import User
 from app.extensions import db
