@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CV Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 flex flex-col items-center p-10">
+
+  <h1 class="text-2xl font-semibold mb-6">CV Generator</h1>
+
+  <!-- Template Selector -->
+  <div class="grid grid-cols-3 gap-6 mb-8">
+    <div onclick="selectTemplate('modern')" class="p-4 bg-white rounded-xl shadow hover:shadow-lg cursor-pointer text-center">
+      <h2 class="font-bold text-lg">Modern</h2>
+      <p class="text-gray-500 text-sm">Clean and contemporary design</p>
+    </div>
+    <div onclick="selectTemplate('classic')" class="p-4 bg-white rounded-xl shadow hover:shadow-lg cursor-pointer text-center">
+      <h2 class="font-bold text-lg">Classic</h2>
+      <p class="text-gray-500 text-sm">Traditional professional format</p>
+    </div>
+    <div onclick="selectTemplate('minimalist')" class="p-4 bg-white rounded-xl shadow hover:shadow-lg cursor-pointer text-center">
+      <h2 class="font-bold text-lg">Minimalist</h2>
+      <p class="text-gray-500 text-sm">Simple and elegant layout</p>
+    </div>
+  </div>
+
+  <!-- Generate Form -->
+  <form id="cvForm" class="bg-white rounded-xl shadow-lg p-8 w-full max-w-2xl space-y-4">
+    <h2 class="text-xl font-semibold mb-2">Personal Information</h2>
+    <input name="full_name" placeholder="Full Name" class="border p-2 w-full rounded" required>
+    <input name="email" placeholder="Email" class="border p-2 w-full rounded">
+    <input name="phone_number" placeholder="Phone Number" class="border p-2 w-full rounded">
+
+    <h2 class="text-xl font-semibold mt-6 mb-2">Summary</h2>
+    <textarea name="summary" placeholder="Write a short summary..." class="border p-2 w-full rounded"></textarea>
+
+    <h2 class="text-xl font-semibold mt-6 mb-2">Skills</h2>
+    <input name="hard_skills" placeholder="Hard Skills (comma separated)" class="border p-2 w-full rounded">
+    <input name="soft_skills" placeholder="Soft Skills (comma separated)" class="border p-2 w-full rounded">
+
+    <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+      Generate CV
+    </button>
+  </form>
+
+  <script>
+  let selectedTemplate = "modern";
+
+  function selectTemplate(t) {
+    selectedTemplate = t;
+    alert("Selected template: " + t);
+  }
+
+  document.getElementById("cvForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const data = {
+      template: selectedTemplate,
+      personal_info: {
+        full_name: e.target.full_name.value,
+        email: e.target.email.value,
+        phone_number: e.target.phone_number.value
+      },
+      summary: e.target.summary.value,
+      skills: {
+        hard_skills: e.target.hard_skills.value.split(",").map(s => s.trim()),
+        soft_skills: e.target.soft_skills.value.split(",").map(s => s.trim())
+      },
+      work_experience: [],
+      education: []
+    };
+
+    const res = await fetch("/api/cv/generate_custom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+
+    if (!res.ok) return alert("Error generating CV!");
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "generated_cv.pdf";
+    a.click();
+  });
+  </script>
+</body>
+</html>
