@@ -11,8 +11,8 @@ from app.services.ai_analyzer import calculate_match_score, check_ats_friendline
 
 # --- Impor dari bagian Generate CV & Phrasing (Tugas Anda) ---
 from app.services.openai_service import get_phrasing_suggestion
-from app.services.cv_generator import create_cv_pdf
-from app.services import database as db_service
+from app.services.cv_generator import build_cv
+import app.database as db_service
 
 # Membuat blueprint tunggal untuk semua fitur Job Seeker
 # Prefix /api/jobseeker akan digunakan untuk semua rute di file ini

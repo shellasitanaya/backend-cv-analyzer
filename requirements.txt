@@ -11,6 +11,10 @@ confection==0.1.5
 cymem==2.0.11
 Flask==3.1.2
 flask-cors==6.0.1
+Flask-SQLAlchemy
+Flask-Migrate
+Flask-Bcrypt
+Flask-JWT-Extended
 idna==3.10
 itsdangerous==2.2.0
 Jinja2==3.1.6
@@ -62,10 +66,8 @@ python-docx==1.2.0
 reportlab==4.2.0
 docx2pdf==0.1.8
 pypandoc==1.13
-openai==1.50.2  
 pillow==10.3.0
 pytesseract==0.3.13
-Flask-SQLAlchemy
-Flask-Migrate
-Flask-Bcrypt
-Flask-JWT-Extended
+pymysql==1.1.0
+google-generativeai
+
