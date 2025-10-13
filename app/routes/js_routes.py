@@ -6,7 +6,8 @@ import os
 
 # Import servis yang sudah ada
 from app.services.cv_parser import extract_text
-from app.services.ai_analyzer import parse_candidate_info, calculate_match_score, check_ats_friendliness, analyze_keywords # Kita akan tambahkan fungsi baru nanti
+# from app.services.ai_analyzer import parse_candidate_info, calculate_match_score, check_ats_friendliness, analyze_keywords # Kita akan tambahkan fungsi baru nanti
+# from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
 from app import database # Nanti kita akan pakai ini untuk menyimpan hasil
 
 js_bp = Blueprint('js_api', __name__, url_prefix='/api/js')
