@@ -123,7 +123,7 @@ def generate_cv_endpoint():
     original_cv_id = data.get('original_cv_id')
 
     # 2. Panggil service untuk membuat file PDF
-    pdf_relative_path = create_cv_pdf(template_name, cv_data)
+d    pdf_relative_path = create_cv_pdf(template_name, cv_data)
     
     if not pdf_relative_path:
         return jsonify({"error": "Gagal membuat file PDF."}), 500
