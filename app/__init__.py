@@ -37,6 +37,9 @@ def create_database_if_not_exists():
     host = host_parts[0]
     port = int(host_parts[1]) if len(host_parts) > 1 else 3306  # default to 3306
 
+    print(f"🔧 Ensuring database '{Config.DB_NAME}' exists...")
+    print(f"Connecting to DB server at {host}:{port} with user '{Config.DB_USER}'")
+    
     conn = connect(
         host=host,
         port=port,
