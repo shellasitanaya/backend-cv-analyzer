@@ -10,6 +10,7 @@ class Job(db.Model):
     job_title = db.Column(db.String(255))
     job_location = db.Column(db.String(255))
     job_description = db.Column(db.Text)
+    min_gpa = db.Column(db.Numeric(3, 2)) 
     min_experience = db.Column(db.Integer)
     max_experience = db.Column(db.Integer)
     degree_requirements = db.Column(db.String(100))

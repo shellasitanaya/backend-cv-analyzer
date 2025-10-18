@@ -1,5 +1,4 @@
 from flask import Flask, jsonify
-from flask_cors import CORS
 from config import Config
 from pymysql import connect
 from .extensions import *
@@ -13,7 +12,7 @@ from app.database.seed.seed_all import seed_all
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config) 
-    CORS(app) # Mengaktifkan CORS untuk semua rute
+    cors.init_app(app) # Mengaktifkan CORS untuk semua rute
     # CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
     
     create_database_if_not_exists()
@@ -40,6 +39,9 @@ def create_database_if_not_exists():
     host = host_parts[0]
     port = int(host_parts[1]) if len(host_parts) > 1 else 3306  # default to 3306
 
+    print(f"🔧 Ensuring database '{Config.DB_NAME}' exists...")
+    print(f"Connecting to DB server at {host}:{port} with user '{Config.DB_USER}'")
+    
     conn = connect(
         host=host,
         port=port,

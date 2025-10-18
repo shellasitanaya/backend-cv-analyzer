@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\hp\OneDrive\Documents\Kuliah\Semester 5\Manajemen Proyek Teknologi Informasi\Smart CV Analyzer & Optimizer\backend-cv-analyzer\venv
+set VIRTUAL_ENV=C:\xampp\htdocs\backend-cv-analyzer\venv
 
 if not defined PROMPT set PROMPT=$P$G
 

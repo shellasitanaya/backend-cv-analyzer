@@ -1,32 +1,29 @@
-import fitz  # Ini adalah library PyMuPDF
-import docx
 import os
+import fitz  #pyMuPDF
+import docx
+
 
 def extract_text(file_path):
     """
-    Mengekstrak teks dari file PDF atau DOCX.
-
-    Args:
-        file_path (str): Path lengkap ke file yang akan diproses.
-
-    Returns:
-        str: Teks yang diekstrak dari file, atau None jika gagal.
+    Mengekstrak teks dari file PDF (menggunakan PyMuPDF) atau DOCX.
     """
     try:
         if not os.path.exists(file_path):
             print(f"Error: File tidak ditemukan di {file_path}")
             return None
 
-        # Memproses file .pdf
         if file_path.endswith('.pdf'):
             doc = fitz.open(file_path)
-            full_text = ""
+            all_blocks = []
             for page in doc:
-                full_text += page.get_text()
+                all_blocks.extend(page.get_text("blocks"))
             doc.close()
+            
+            all_blocks.sort(key=lambda b: (b[1], b[0]))
+            
+            full_text = "\n".join([block[4] for block in all_blocks])
             return full_text
 
-        # Memproses file .docx
         elif file_path.endswith('.docx'):
             doc = docx.Document(file_path)
             full_text = []
@@ -35,7 +32,6 @@ def extract_text(file_path):
             return '\n'.join(full_text)
         
         else:
-            print(f"Error: Format file tidak didukung untuk {file_path}")
             return None
 
     except Exception as e:
@@ -43,27 +39,30 @@ def extract_text(file_path):
         return None
 
 
-# =================================================================
-# BAGIAN UNTUK TESTING (Bisa dihapus nanti)
-# =================================================================
+#  Testing
 if __name__ == '__main__':
-    # Untuk menguji fungsi ini, buat folder 'test_cvs' di dalam folder 'backend'
-    # Lalu letakkan beberapa file CV .pdf dan .docx di dalamnya.
+    # 1. Dapatkan path absolut dari file ini (cv_parser.py)
+    script_path = os.path.abspath(__file__)
+
+    # 2. Dapatkan path ke folder root backend dengan "naik" beberapa level
+    backend_root_dir = os.path.dirname(os.path.dirname(os.path.dirname(script_path)))
+
+    # 3. Gabungkan path root backend dengan folder 'test_cvs' dan nama file
+    test_pdf_path = os.path.join(backend_root_dir, 'test_cvs', 'my_cv(3).pdf')
+    test_docx_path = os.path.join(backend_root_dir, 'test_cvs', 'my_cv(3).docx')
     
-    # Ganti nama file di bawah ini sesuai dengan file CV Anda
-    test_pdf_path = r'C:\Users\Shella Valensia\OneDrive\Documents\GitHub\backend-cv-analyzer\test_cvs\my_cv(2).pdf'
-    test_docx_path = r'C:\Users\Shella Valensia\OneDrive\Documents\GitHub\backend-cv-analyzer\test_cvs\my_cv.docx'
-    
+    print(f"Mencari file PDF di: {test_pdf_path}")
     print("--- Menguji File PDF ---")
     pdf_text = extract_text(test_pdf_path)
     if pdf_text:
         print(f"Berhasil mengekstrak {len(pdf_text)} karakter.\n")
-        print(pdf_text[:500]) # Tampilkan 500 karakter pertama
-        
+        print(pdf_text)  # tampilkan 1000 karakter pertama biar tidak terlalu panjang
+
     print("\n" + "="*30 + "\n")
 
+    print(f"Mencari file DOCX di: {test_docx_path}")
     print("--- Menguji File DOCX ---")
     docx_text = extract_text(test_docx_path)
     if docx_text:
         print(f"Berhasil mengekstrak {len(docx_text)} karakter.\n")
-        print(docx_text[:500]) # Tampilkan 500 karakter pertama
+        print(docx_text[:3000])  # tampilkan 1000 karakter pertama
