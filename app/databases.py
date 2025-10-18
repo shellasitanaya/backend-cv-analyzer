@@ -1,148 +1,79 @@
-import mysql.connector
-from flask import current_app
-import json
-import uuid
-
-def get_db_connection():
-    """Membuat koneksi baru ke database."""
-    conn = mysql.connector.connect(
-        host=current_app.config['DB_HOST'],
-        user=current_app.config['DB_USER'],
-        password=current_app.config['DB_PASSWORD'],
-        database=current_app.config['DB_NAME']
-    )
-    return conn
-
-
-def get_all_candidates_for_job(job_id, filters={}):
-    """
-    Mengambil kandidat yang lolos dengan filter dinamis, 
-    termasuk semua data yang dibutuhkan oleh UI ranking.
-    """
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        query_parts = [
-            "SELECT",
-            "    id, extracted_name, extracted_email, match_score, status,",
-            "    JSON_EXTRACT(structured_profile_json, '$.gpa') AS gpa,",
-            "    JSON_EXTRACT(structured_profile_json, '$.experience') AS experience,",
-            "    JSON_EXTRACT(structured_profile_json, '$.education') AS education,",
-            "    JSON_EXTRACT(structured_profile_json, '$.skills') AS skills",
-            "FROM Candidates",
-            "WHERE job_id = %s AND status = 'passed_filter'"
-        ]
-        params = [job_id]
-
-        # (Logika filter dinamis Anda bisa ditambahkan di sini jika sudah ada)
-        # Contoh:
-        # if filters.get('min_gpa'):
-        #     query_parts.append("AND JSON_EXTRACT(structured_profile_json, '$.gpa') >= %s")
-        #     params.append(float(filters['min_gpa']))
-        
-        query_parts.append("ORDER BY match_score DESC")
-        
-        final_query = " ".join(query_parts)
-        
-        cursor.execute(final_query, tuple(params))
-        candidates = cursor.fetchall()
-        return candidates
-        
-    except Exception as e:
-        print(f"Database error in get_all_candidates_for_job: {e}")
-        return []
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-def save_candidate(job_id, data):
-    """Menyimpan data satu kandidat ke database dengan semua kolom baru."""
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        candidate_id = str(uuid.uuid4())
-        
-        query = """
-        INSERT INTO Candidates (
-            id, job_id, original_filename, storage_path, extracted_name,
-            extracted_email, extracted_phone, match_score, 
-            status, rejection_reason, structured_profile_json
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        
-        profile_data = data.get('structured_profile') or {}
-        profile_json_string = json.dumps(profile_data)
-
-        values = (
-            candidate_id,
-            job_id,
-            data.get('original_filename'),
-            data.get('storage_path'),
-            data.get('name'), 
-            data.get('email'),
-            data.get('phone'), 
-            data.get('score'), # Akan NULL jika kandidat ditolak -> ga di analisis klo ga masuk kandidat
-            data.get('status', 'processing'), # defaultnya 'processing'
-            data.get('rejection_reason'), 
-            profile_json_string
-        )
-
-        cursor.execute(query, values)
-        conn.commit()
-        
-        last_id = cursor.lastrowid
-        return last_id
-
-    except Exception as e:
-        print(f"Database error in save_candidate: {e}")
-        if conn:
-            conn.rollback() 
-        return None
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+from app.extensions import db
+from app.models import Job, Candidate
 
 def get_all_jobs():
-    """Mengambil semua data pekerjaan dari tabel Jobs."""
-    conn = None
-    cursor = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        
-        query = "SELECT id, job_title, min_gpa, degree_requirements FROM Jobs ORDER BY created_at DESC"
-        cursor.execute(query)
-        
-        jobs = cursor.fetchall()
-        return jobs
-        
-    except Exception as e:
-        print(f"Database error in get_all_jobs: {e}")
-        return [] 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+    """Ambil semua data pekerjaan."""
+    jobs = Job.query.order_by(Job.created_at.desc()).all()
+    return [job_to_dict(j) for j in jobs]
 
 
 def get_job_by_id(job_id):
-    """Mengambil detail satu pekerjaan berdasarkan ID."""
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM Jobs WHERE id = %s", (job_id,))
-    job = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return job
+    """Ambil satu job berdasarkan ID."""
+    job = Job.query.get(job_id)
+    return job_to_dict(job) if job else None
+
+
+def get_all_candidates_for_job(job_id, filters={}):
+    """Ambil semua kandidat untuk satu job dengan filter opsional."""
+    query = Candidate.query.filter_by(job_id=job_id, status='passed_filter')
+
+    # Contoh: jika ingin filter min_gpa dari structured_profile_json
+    if 'min_gpa' in filters:
+        # Gunakan filter JSON dengan SQLAlchemy text (jika perlu)
+        from sqlalchemy import text
+        query = query.filter(
+            text(f"JSON_EXTRACT(structured_profile_json, '$.gpa') >= {filters['min_gpa']}")
+        )
+
+    candidates = query.order_by(Candidate.match_score.desc()).all()
+    return [candidate_to_dict(c) for c in candidates]
+
+
+def save_candidate(job_id, data):
+    """Simpan data kandidat ke database."""
+    candidate = Candidate(
+        job_id=job_id,
+        original_filename=data.get('original_filename'),
+        storage_path=data.get('storage_path'),
+        extracted_name=data.get('name'),
+        extracted_email=data.get('email'),
+        extracted_phone=data.get('phone'),
+        match_score=data.get('score'),
+        status=data.get('status', 'processing'),
+        rejection_reason=data.get('rejection_reason'),
+        structured_profile_json=data.get('structured_profile') or {}
+    )
+    db.session.add(candidate)
+    try:
+        db.session.commit()
+        return candidate.id
+    except Exception as e:
+        db.session.rollback()
+        print(f"Database error in save_candidate: {e}")
+        return None
+    
+# helper function
+def job_to_dict(job: Job):
+    return {
+        "id": job.id,
+        "job_title": job.job_title,
+        "min_gpa": job.min_gpa,
+        "degree_requirements": job.degree_requirements,
+        "created_at": job.created_at.isoformat() if job.created_at else None
+    }
+
+
+def candidate_to_dict(c: Candidate):
+    return {
+        "id": c.id,
+        "job_id": c.job_id,
+        "original_filename": c.original_filename,
+        "storage_path": c.storage_path,
+        "extracted_name": c.extracted_name,
+        "extracted_email": c.extracted_email,
+        "extracted_phone": c.extracted_phone,
+        "match_score": c.match_score,
+        "status": c.status,
+        "rejection_reason": c.rejection_reason,
+        "structured_profile_json": c.structured_profile_json
+    }

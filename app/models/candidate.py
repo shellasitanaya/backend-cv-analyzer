@@ -1,5 +1,5 @@
 from app.extensions import db
-from datetime import datetime, timezone
+from datetime import datetime
 import uuid
 
 class Candidate(db.Model):
@@ -14,7 +14,10 @@ class Candidate(db.Model):
     extracted_phone = db.Column(db.String(50))
     match_score = db.Column(db.Numeric(5, 2))
     structured_profile_json = db.Column(db.JSON)
-    uploaded_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    education = db.Column(db.Text, nullable=True)
+    experience = db.Column(db.Text, nullable=True)
 
     status = db.Column(db.Enum("processing", "passed_filter", "rejected", name="candidate_status"), default="processing")
     rejection_reason = db.Column(db.String(255))

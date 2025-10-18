@@ -5,7 +5,8 @@ import json
 
 from app.services.cv_parser import extract_text
 from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
-from app import databases
+from app.extensions import db
+import app.databases as databases
 from app.services.talent_search import search_candidates  
 
 
