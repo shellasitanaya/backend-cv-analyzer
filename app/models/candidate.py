@@ -1,5 +1,5 @@
 from app.extensions import db
-from datetime import datetime, timezone
+from datetime import datetime
 import uuid
 
 class Candidate(db.Model):
