@@ -6,6 +6,7 @@ import warnings
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from spacy.language import Language
+from typing import List, Dict, Union
 
 try:
     from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
@@ -31,14 +32,14 @@ except Exception as e:
     print(f"ERROR: Gagal memuat model NER Indonesia: {e}")
 
 # # Daftar kata kunci skill untuk dicari
-# SKILL_KEYWORDS = [
-#     'python', 'java', 'c++', 'javascript', 'react', 'reactjs', 'node.js', 'nodejs',
-#     'flask', 'django', 'spring boot', 'html', 'css', 'tailwind',
-#     'sql', 'mysql', 'postgresql', 'mongodb', 'database',
-#     'docker', 'git', 'aws', 'api', 'rest api', 'machine learning',
-#     'data analysis', 'data science', 'business intelligence', 'seo',
-#     'digital marketing', 'content marketing', 'sem', 'google analytics'
-# ]
+SKILL_KEYWORDS = [
+    'python', 'java', 'c++', 'javascript', 'react', 'reactjs', 'node.js', 'nodejs',
+    'flask', 'django', 'spring boot', 'html', 'css', 'tailwind',
+    'sql', 'mysql', 'postgresql', 'mongodb', 'database',
+    'docker', 'git', 'aws', 'api', 'rest api', 'machine learning',
+    'data analysis', 'data science', 'business intelligence', 'seo',
+    'digital marketing', 'content marketing', 'sem', 'google analytics'
+]
 
 
 def normalize_name(name: str) -> str:
