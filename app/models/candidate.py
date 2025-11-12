@@ -24,4 +24,4 @@ class Candidate(db.Model):
 
     job = db.relationship("Job", back_populates="candidates")
 
-    candidate_skills = db.relationship("CandidateSkill", back_populates="candidates")
+    candidate_skills = db.relationship("CandidateSkill", back_populates="candidate")

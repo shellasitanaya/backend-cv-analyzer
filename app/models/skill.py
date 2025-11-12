@@ -7,4 +7,4 @@ class Skill(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     skill_name = db.Column(db.String(255))
 
-    candidate_skills = db.relationship("CandidateSkill", back_populates="skills")
+    candidate_skills = db.relationship("CandidateSkill", back_populates="skill")

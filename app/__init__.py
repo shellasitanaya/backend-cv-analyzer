@@ -17,7 +17,7 @@ def create_app():
     app.config.from_object(Config)
 
     # Allow CORS from React
-    CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+    cors.init_app(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
     
     create_database_if_not_exists()
 
