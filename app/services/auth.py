@@ -21,9 +21,14 @@ class AuthService:
 
         # Create JWT token
         access_token = create_access_token(
-            identity={"id": user.id, "role": user.role, "email": user.email},
+            identity=str(user.id),
+            additional_claims={
+                "role": user.role,
+                "email": user.email
+            },
             expires_delta=timedelta(hours=3)
         )
+
         return access_token, None
 
 

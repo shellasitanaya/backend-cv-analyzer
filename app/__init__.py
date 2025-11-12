@@ -11,9 +11,13 @@ from app.database.seed.seed_all import seed_all
 
 def create_app():
     app = Flask(__name__)
-    app.config.from_object(Config) 
-    cors.init_app(app) # Mengaktifkan CORS untuk semua rute
+    # app.config.from_object(Config) 
+    # cors.init_app(app) # Mengaktifkan CORS untuk semua rute
     # CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+    app.config.from_object(Config)
+
+    # Allow CORS from React
+    CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
     
     create_database_if_not_exists()
 
