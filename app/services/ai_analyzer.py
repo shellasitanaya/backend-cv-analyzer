@@ -385,3 +385,4 @@ def analyze_keywords(cv_text: str, job_desc_text: str) -> Dict[str, Union[List[s
 #     print("--- 4. Menguji Fungsi Analisis Keyword ---")
 #     pprint.pprint(analyze_keywords(sample_cv_text, sample_job_description))
 #     print("\n" + "="*40 + "\n")
+
