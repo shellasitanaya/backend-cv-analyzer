@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\hp\OneDrive\Documents\Kuliah\Semester 5\Manajemen Proyek Teknologi Informasi\Smart CV Analyzer & Optimizer\backend-cv-analyzer\venv"
+VIRTUAL_ENV="C:\xampp\htdocs\backend-cv-analyzer\venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
