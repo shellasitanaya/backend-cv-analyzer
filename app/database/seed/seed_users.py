@@ -8,7 +8,7 @@ def seed():
 
     users = [
         User(
-                name="Admin HR 1",
+            name="Admin HR 1",
             email="hr1@example.com",
             password=generate_password_hash("password123"),
             role="hr",
