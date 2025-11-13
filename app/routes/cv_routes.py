@@ -1,9 +1,11 @@
 from flask import Blueprint, jsonify, send_file, request, current_app
+from flask import Blueprint, jsonify, send_file, request, current_app
 from app.services.cv_generator import build_cv
 from app.models import Candidate
 import os
 from PIL import Image
 import pytesseract
+
 
 
 cv_bp = Blueprint("cv", __name__)
@@ -93,3 +95,4 @@ def preview_cv():
     except Exception as e:
         print(f"❌ Error generating CV preview: {e}")
         return jsonify({"error": str(e)}), 500
+

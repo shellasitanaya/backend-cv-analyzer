@@ -390,7 +390,8 @@ def build_cv(candidate_id):
     candidate_data = candidate.__dict__.copy()
     candidate_data.pop("_sa_instance_state", None)
 
-    candidate_data = enhance_with_ai(candidate_data)
+    # apa ini tlg dicek lg ya
+    # candidate_data = enhance_with_ai(candidate_data)
 
     template_dir = os.path.join(current_app.root_path, "template")
     env = Environment(loader=FileSystemLoader(template_dir))
@@ -584,5 +585,3 @@ def safe_enhance_with_gemini(candidate_data):
             if attempt == max_retries - 1:
                 print("❌ All Gemini attempts failed")
                 return candidate_data
-
-

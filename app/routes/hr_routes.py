@@ -2,8 +2,10 @@
 
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
+from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request, get_jwt
 import os
 import json
+from app.models import Job
 
 from app.services.cv_parser import extract_text
 from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
@@ -13,6 +15,19 @@ from app.services.talent_search import search_candidates
 
 
 hr_bp = Blueprint('hr_api', __name__, url_prefix='/api/hr')
+
+# ensure every single endpoint's request have jwt
+# @hr_bp.before_request
+# def require_jwt_for_all_hr_routes():
+#     # ✅ Ensure JWT is present and valid
+#     verify_jwt_in_request(optional=False)
+
+#     # ✅ Now safe to access JWT claims
+#     claims = get_jwt()
+#     role = claims.get("role")
+
+#     if role != "hr":
+#         return {"message": "Unauthorized"}, 403
 
 UPLOAD_FOLDER = 'temp_uploads'
 if not os.path.exists(UPLOAD_FOLDER):
@@ -175,6 +190,41 @@ def get_jobs_list():
         return jsonify(jobs)
     except Exception as e:
         return jsonify({"error": "Gagal mengambil daftar pekerjaan", "details": str(e)}), 500
+
+# JOB POSTING ROUTES
+@hr_bp.route("/jobs/create", methods=["POST"])
+@jwt_required()
+def create_job():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+
+        job = Job(
+            hr_user_id=user_id,
+            job_title=data.get("job_title"),
+            job_location=data.get("job_location"),
+            job_description=data.get("job_description"),
+            min_gpa=data.get("min_gpa"),
+            min_experience=data.get("min_experience"),
+            max_experience=data.get("max_experience"),
+            degree_requirements=data.get("degree_requirements"),
+            requirements_json=data.get("requirements"),
+        )
+
+        db.session.add(job)
+        db.session.commit()
+
+        return jsonify({
+            "message": "Job created successfully",
+            "job_id": job.id
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()  # rollback in case commit failed
+        return jsonify({
+            "error": "Failed to create job",
+            "details": str(e)
+        }), 500
 
 @hr_bp.route('/test', methods=['GET'])
 def test_connection():

@@ -1,19 +1,14 @@
-# filename: js_routes.py
-# location: backend-cv-analyzer/app/routes/
-
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 import os
-
-# --- Impor dari bagian Analisis & Scoring (Ferrel) ---
+# scoring and analysis imports
 from app.services.cv_parser import extract_text
 from app.services.ai_analyzer import calculate_match_score, check_ats_friendliness, analyze_keywords
 
 # --- Impor dari bagian Generate CV & Phrasing (Tugas Anda) ---
+# from app.services.openai_service import get_phrasing_suggestion
 from app.services.cv_generator import build_cv
-import app.database as db_service
 
-# Membuat blueprint tunggal untuk semua fitur Job Seeker
 # Prefix /api/jobseeker akan digunakan untuk semua rute di file ini
 js_bp = Blueprint('jobseeker_api', __name__, url_prefix='/api/jobseeker')
 
@@ -23,7 +18,7 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 # =================================================================
-# ENDPOINT UNTUK ANALISIS CV (DARI FERREL)
+# ENDPOINT UNTUK ANALISIS CV (FERREL)
 # Deskripsi: Menerima upload file CV dan deskripsi pekerjaan, lalu mengembalikan analisis lengkap.
 # =================================================================
 @js_bp.route('/analyze', methods=['POST'])
@@ -66,7 +61,7 @@ def analyze_cv():
             "message": "Analisis berhasil."
         }
         
-        # Di sini bisa ditambahkan logika untuk menyimpan hasil analisis ke tabel Analyses
+        # Di sini bisa ditambahkan logika untuk menyimpan hasil analisis ke tabel `Analyses`
         # contoh: db_service.save_analysis(user_id, analysis_result)
 
         return jsonify(analysis_result), 200
@@ -79,79 +74,24 @@ def analyze_cv():
             os.remove(file_path)
 
 # =================================================================
-# ENDPOINT UNTUK AI PHRASING (TUGAS ANDA)
+# ENDPOINT UNTUK AI PHRASING (TOTO) - DIPAKAI NANTI (masih cari model)
 # Deskripsi: Menerima sepotong teks dan mengembalikannya dalam versi yang lebih baik.
 # =================================================================
-@js_bp.route('/suggest-phrasing', methods=['POST'])
-def suggest_phrasing_endpoint():
-    """
-    Endpoint untuk menerima teks dan mengembalikan saran perbaikan dari AI.
-    """
-    data = request.get_json()
+# @js_bp.route('/suggest-phrasing', methods=['POST'])
+# def suggest_phrasing_endpoint():
+#     """
+#     Endpoint untuk menerima teks dan mengembalikan saran perbaikan dari AI.
+#     """
+#     data = request.get_json()
     
-    if not data or 'text_input' not in data:
-        return jsonify({"error": "Request body harus berisi 'text_input'"}), 400
+#     if not data or 'text_input' not in data:
+#         return jsonify({"error": "Request body harus berisi 'text_input'"}), 400
     
-    text_input = data.get('text_input')
-    context = data.get('context', 'work_experience')
+#     text_input = data.get('text_input')
+#     context = data.get('context', 'work_experience')
 
-    try:
-        suggested_text = get_phrasing_suggestion(text_input, context)
-        return jsonify({"suggested_text": suggested_text})
-    except Exception as e:
-        return jsonify({"error": "Gagal memproses permintaan AI", "details": str(e)}), 500
-
-# =================================================================
-# ENDPOINT UNTUK GENERATE CV (TUGAS ANDA)
-# Deskripsi: Menerima data CV lengkap dalam format JSON dan menghasilkan file PDF.
-# =================================================================
-@js_bp.route('/generate-cv', methods=['POST'])
-def generate_cv_endpoint():
-    """
-    Endpoint untuk menerima data CV lengkap dan men-generate file PDF.
-    """
-    data = request.get_json()
-
-    # 1. Validasi input JSON dari frontend
-    required_fields = ['original_cv_id', 'template_name', 'cv_data', 'user_id']
-    if not data or not all(field in data for field in required_fields):
-        return jsonify({"error": "Request body tidak lengkap. Membutuhkan: " + ", ".join(required_fields)}), 400
-
-    template_name = data.get('template_name')
-    cv_data = data.get('cv_data')
-    original_cv_id = data.get('original_cv_id')
-
-    # 2. Panggil service untuk membuat file PDF
-    pdf_relative_path = create_cv_pdf(template_name, cv_data)
-    
-    if not pdf_relative_path:
-        return jsonify({"error": "Gagal membuat file PDF."}), 500
-
-    # 3. Simpan catatan ke database untuk versioning
-    try:
-        last_version = db_service.get_last_cv_version(original_cv_id)
-        new_version_number = (last_version or 0) + 1
-
-        generated_cv_info = {
-            'template_name': template_name,
-            'version_number': new_version_number,
-            'storage_path': pdf_relative_path 
-        }
-
-        generated_cv_id = db_service.save_generated_cv(original_cv_id, generated_cv_info)
-
-    except Exception as e:
-        # Jika PDF berhasil dibuat tapi gagal simpan ke DB, tetap berikan link unduhan
-        return jsonify({
-            "message": "PDF created but failed to save version history.",
-            "download_url": pdf_relative_path,
-            "error": str(e)
-        }), 500
-
-    # 4. Kirim respons sukses jika semuanya berjalan lancar
-    return jsonify({
-        "message": "CV generated successfully!",
-        "download_url": pdf_relative_path,
-        "generated_cv_id": generated_cv_id,
-        "version": new_version_number
-    }), 201
+#     try:
+#         suggested_text = get_phrasing_suggestion(text_input, context)
+#         return jsonify({"suggested_text": suggested_text})
+#     except Exception as e:
+#         return jsonify({"error": "Gagal memproses permintaan AI", "details": str(e)}), 500

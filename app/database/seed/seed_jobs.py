@@ -1,6 +1,7 @@
 from app.extensions import db
 from app.models import Job, User
 from datetime import datetime
+import decimal
 
 def seed():
     print("🌱 Seeding jobs...")
@@ -9,56 +10,43 @@ def seed():
     jobs = [
         Job(
             hr_user_id=hr_id,
-            job_title="Backend Developer (Python)",
+            job_title="IT Data Engineer - TAF",
             job_location="Jakarta, Indonesia",
             job_description=(
-                "Looking for a backend developer proficient in Python and Flask. "
-                "You will work with REST APIs, databases, and cloud integration."
+                "Responsible for designing, developing, and maintaining data pipelines (ETL). "
+                "Will work with large datasets, cloud platforms, and data warehousing solutions "
+                "to support business intelligence and analytics at Toyota Astra Financial Services (TAF)."
             ),
-            min_gpa=3.00, 
+            min_gpa=decimal.Decimal('3.20'), # Menggunakan Decimal untuk presisi
             min_experience=2,
             max_experience=5,
-            degree_requirements="Bachelor's in Computer Science",
+            degree_requirements="Bachelor's in Computer Science, Information Systems, or related field",
             requirements_json=[
-                "Experience with Flask or Django",
-                "Understanding of REST API design"
+                "Minimum 2 years of experience in data engineering or related roles.",
+                "Proficiency in SQL and Python programming.",
+                "Experience in designing and managing ETL processes.",
+                "Familiar with data warehouse concepts.",
+                "Experience with cloud platforms (AWS, GCP, or Azure) is a strong plus."
             ],
-            skills_json={
-                "hard_skills": ["Python", "Flask", "PostgreSQL", "Docker"],
-                "soft_skills": ["Communication", "Teamwork"],
-                "optional_skills": ["AWS", "Redis"]
-            },
-            additional_info_json={
-                "team": "Platform Engineering",
-                "report_to": "Head of Engineering"
-            },
             created_at=datetime.utcnow(),
         ),
         Job(
             hr_user_id=hr_id,
-            job_title="Frontend Developer (React)",
-            job_location="Bandung, Indonesia (Hybrid)",
+            job_title="ERP Business Analyst Project - GSI",
+            job_location="Jakarta, Indonesia",
             job_description=(
-                "Join our frontend team to build interactive web apps using React and Tailwind CSS. "
-                "Work closely with the backend and design teams to deliver high-quality UIs."
+                "Act as a vital liaison between business stakeholders and the IT team for a large-scale ERP implementation project at PT Gaya Motor (GSI). "
+                "Responsible for gathering user requirements, analyzing and mapping business processes, and ensuring the ERP solution (e.g., SAP) meets business needs."
             ),
-            min_gpa=3.87, 
-            min_experience=1,
-            max_experience=4,
-            degree_requirements="Bachelor's in Information Technology",
+            min_gpa=decimal.Decimal('3.25'),
+            min_experience=3,
+            max_experience=7,
+            degree_requirements="Bachelor's in Information Systems, Accounting, or Business",
             requirements_json=[
-                "Proficiency in React",
-                "Experience with version control (Git)"
+                "Minimum 3 years of experience as a Business Analyst, preferably in ERP projects (SAP, Oracle, etc.).",
+                "Strong understanding of core business processes (e.g., Finance, SCM, Manufacturing).",
+                "Excellent communication and requirement gathering skills."
             ],
-            skills_json={
-                "hard_skills": ["React", "JavaScript", "Tailwind CSS"],
-                "soft_skills": ["Creativity", "Attention to detail"],
-                "optional_skills": ["Next.js", "Figma"]
-            },
-            additional_info_json={
-                "team": "Frontend Squad",
-                "report_to": "UI Lead"
-            },
             created_at=datetime.utcnow(),
         ),
     ]

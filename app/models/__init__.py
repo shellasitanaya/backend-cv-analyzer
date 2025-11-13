@@ -4,6 +4,8 @@ from .candidate import Candidate
 from .cv import CV
 from .analysis import Analysis
 from .generated_cv import GeneratedCV
+from .skill import Skill
+from .candidate_skill import CandidateSkill
 
 __all__ = [
     "User", 
@@ -11,5 +13,7 @@ __all__ = [
     "Candidate",
     "CV",
     "Analysis",
-    "GeneratedCV"
+    "GeneratedCV",
+    "Skill",
+    "CandidateSkill"
 ]

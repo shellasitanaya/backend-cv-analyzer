@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import Job, Candidate
+from app.models import Job, Candidate, GeneratedCV
 
 def get_all_jobs():
     """Ambil semua data pekerjaan."""
@@ -51,7 +51,35 @@ def save_candidate(job_id, data):
         db.session.rollback()
         print(f"Database error in save_candidate: {e}")
         return None
-    
+
+def save_generated_cv(original_cv_id: int, data: dict) -> int:
+    """Menyimpan data CV yang di-generate ke tabel GeneratedCVs (ORM)."""
+    try:
+        new_cv = GeneratedCV(
+            original_cv_id=original_cv_id,
+            template_name=data.get('template_name'),
+            version_number=data.get('version_number'),
+            storage_path=data.get('storage_path')
+        )
+        db.session.add(new_cv)
+        db.session.commit()
+        return new_cv.id
+    except Exception as e:
+        db.session.rollback()
+        print(f"Database error in save_generated_cv: {e}")
+        return None
+
+
+def get_last_cv_version(original_cv_id: int) -> int:
+    """Mendapatkan nomor versi terakhir dari sebuah CV original (ORM)."""
+    from sqlalchemy import func
+    max_version = (
+        db.session.query(func.max(GeneratedCV.version_number))
+        .filter(GeneratedCV.original_cv_id == original_cv_id)
+        .scalar()
+    )
+    return int(max_version) if max_version is not None else 0
+
 # helper function
 def job_to_dict(job: Job):
     return {

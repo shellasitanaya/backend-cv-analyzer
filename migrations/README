@@ -2,3 +2,5 @@ Single-database configuration for Flask.
 
 To migrate all the tables, run this command:
 flask db upgrade
+
+for the seeder: flask seed-all
