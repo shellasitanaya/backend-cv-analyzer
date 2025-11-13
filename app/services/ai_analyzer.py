@@ -31,46 +31,14 @@ try:
 except Exception as e:
     print(f"ERROR: Gagal memuat model NER Indonesia: {e}")
 
-# Daftar kata kunci skill untuk dicari
-DATA_ENGINEER_SKILLS = [
-    # Hard Skills
-    "Python", 
-    "SQL", 
-    "ETL", 
-    "Data Warehousing", 
-    "Spark", 
-    "Airflow",
-    
-    # Soft Skills
-    "Problem Solving", 
-    "Analytical Thinking", 
-    "Data-driven",
-    
-    # Optional Skills
-    "AWS", 
-    "GCP", 
-    "Tableau", 
-    "Power BI"
-]
-BUSINESS_ANALYST_SKILLS = [
-    # Hard Skills
-    "Business Process Modeling", 
-    "Requirement Gathering", 
-    "SAP", 
-    "ERP", 
-    "SQL", 
-    "Finance",
-    
-    # Soft Skills
-    "Communication", 
-    "Analytical Thinking", 
-    "Negotiation", 
-    "Stakeholder Management",
-    
-    # Optional Skills
-    "Project Management", 
-    "Agile", 
-    "Scrum"
+# # Daftar kata kunci skill untuk dicari
+SKILL_KEYWORDS = [
+    'python', 'java', 'c++', 'javascript', 'react', 'reactjs', 'node.js', 'nodejs',
+    'flask', 'django', 'spring boot', 'html', 'css', 'tailwind',
+    'sql', 'mysql', 'postgresql', 'mongodb', 'database',
+    'docker', 'git', 'aws', 'api', 'rest api', 'machine learning',
+    'data analysis', 'data science', 'business intelligence', 'seo',
+    'digital marketing', 'content marketing', 'sem', 'google analytics'
 ]
 
 
