@@ -28,15 +28,6 @@ def seed():
                 "Familiar with data warehouse concepts.",
                 "Experience with cloud platforms (AWS, GCP, or Azure) is a strong plus."
             ],
-            skills_json={
-                "hard_skills": ["Python", "SQL", "ETL", "Data Warehousing", "Spark", "Airflow"],
-                "soft_skills": ["Problem Solving", "Analytical Thinking", "Data-driven"],
-                "optional_skills": ["AWS", "GCP", "Tableau", "Power BI"]
-            },
-            additional_info_json={
-                "team": "Data Platform Team",
-                "company": "Toyota Astra Financial Services (TAF)"
-            },
             created_at=datetime.utcnow(),
         ),
         Job(
@@ -56,15 +47,6 @@ def seed():
                 "Strong understanding of core business processes (e.g., Finance, SCM, Manufacturing).",
                 "Excellent communication and requirement gathering skills."
             ],
-            skills_json={
-                "hard_skills": ["Business Process Modeling", "Requirement Gathering", "SAP", "ERP", "SQL", "Finance"],
-                "soft_skills": ["Communication", "Analytical Thinking", "Negotiation", "Stakeholder Management"],
-                "optional_skills": ["Project Management", "Agile", "Scrum"]
-            },
-            additional_info_json={
-                "team": "ERP Project Team",
-                "company": "PT Gaya Motor (GSI - Astra Group)"
-            },
             created_at=datetime.utcnow(),
         ),
     ]
