@@ -12,6 +12,7 @@ class Candidate(db.Model):
     name = db.Column(db.String(255))
     email = db.Column(db.String(255))
     phone = db.Column(db.String(50))
+    gpa = db.Column(db.Numeric(5, 2))
     match_score = db.Column(db.Numeric(5, 2))
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
     
