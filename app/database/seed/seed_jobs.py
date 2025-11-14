@@ -41,7 +41,7 @@ def seed():
             min_gpa=decimal.Decimal('3.25'),
             min_experience=3,
             max_experience=7,
-            degree_requirements="Bachelor's in Information Systems, Accounting, or Business",
+            degree_requirements="Bachelor's in Information Systems, Industrial Engineering, or related field",
             requirements_json=[
                 "Minimum 3 years of experience as a Business Analyst, preferably in ERP projects (SAP, Oracle, etc.).",
                 "Strong understanding of core business processes (e.g., Finance, SCM, Manufacturing).",

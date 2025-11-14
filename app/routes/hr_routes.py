@@ -31,27 +31,29 @@ UPLOAD_FOLDER = 'temp_uploads'
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+import os
+import json
+from werkzeug.utils import secure_filename
+from flask import jsonify, request
+
+
+# upload and process multiple CVs (bulk upload) -> terima dari front 
 @hr_bp.route('/jobs/<job_id>/upload', methods=['POST'])
 def upload_and_process_cvs(job_id):
-    print("\n" + "="*50)
-    print("--- [DEBUG] REQUEST UPLOAD DITERIMA ---")
-    print(f"HEADER Content-Type: {request.headers.get('Content-Type')}")
-    print(f"REQUEST.FORM (data teks): {request.form}")
-    print(f"REQUEST.FILES (data file): {request.files}")
-    print("="*50 + "\n")
-    
     if 'cv_files' not in request.files or not request.files.getlist('cv_files'):
-        print("!!! [ERROR] 'cv_files' tidak ditemukan di request.files !!!")
-        return jsonify({"error": "Backend tidak menerima file 'cv_files'"}), 400
+        print("!!! [ERROR] 'cv_files' not found in request.files !!!")
+        return jsonify({"error": "No 'cv_files' found in request"}), 400
     
     cv_files = request.files.getlist('cv_files')
-    job = databases.get_job_by_id(job_id)
-    if not job:
-        return jsonify({"error": "Job ID tidak ditemukan"}), 404
-    job_requirements = {'min_gpa': job.get('min_gpa'), 'min_experience': job.get('min_experience')}
-    job_description = job.get('job_description', '')
     
-    skills_json_string = job.get('skills_json')
+    job = databases.get_job_by_id(job_id) 
+    if not job:
+        return jsonify({"error": "Job ID not found"}), 404
+
+    job_requirements = {'min_gpa': job.min_gpa, 'min_experience': job.min_experience}
+    job_description = job.job_description or ''
+    
+    skills_json_string = job.requirements_json
     skills_from_job = {}
 
     if skills_json_string and isinstance(skills_json_string, str):
@@ -71,6 +73,8 @@ def upload_and_process_cvs(job_id):
 
     for cv_file in cv_files:
         filename = secure_filename(cv_file.filename)
+        if not os.path.exists(UPLOAD_FOLDER):
+            os.makedirs(UPLOAD_FOLDER)
         file_path = os.path.join(UPLOAD_FOLDER, filename)
         
         try:
@@ -84,10 +88,10 @@ def upload_and_process_cvs(job_id):
             candidate_gpa = structured_profile.get('gpa')
             candidate_experience = structured_profile.get('total_experience')
 
-            if job_requirements['min_gpa'] and (not candidate_gpa or candidate_gpa < job_requirements['min_gpa']):
+            if job_requirements['min_gpa'] is not None and (not candidate_gpa or candidate_gpa < job_requirements['min_gpa']):
                 rejection_reason = f"GPA below minimum requirement ({job_requirements['min_gpa']})"
 
-            elif job_requirements.get('min_experience') and (candidate_experience is None or candidate_experience < job_requirements.get('min_experience')):
+            elif job_requirements.get('min_experience') is not None and (candidate_experience is None or candidate_experience < job_requirements.get('min_experience')):
                 rejection_reason = f"Experience below minimum requirement ({job_requirements.get('min_experience')} years)"
 
             if rejection_reason:
@@ -99,7 +103,8 @@ def upload_and_process_cvs(job_id):
                     'name': structured_profile.get('name'),
                     'email': structured_profile.get('email'),
                     'phone': structured_profile.get('phone'),
-                    'structured_profile': structured_profile, 
+                    'education': structured_profile.get('education'), 
+                    'experience': structured_profile.get('experience'), 
                     'status': 'rejected', 
                     'storage_path': file_path,
                     'rejection_reason': rejection_reason
@@ -115,7 +120,8 @@ def upload_and_process_cvs(job_id):
                     'phone': structured_profile.get('phone'),
                     'score': score,
                     'storage_path': file_path,
-                    'structured_profile': structured_profile, # Kirim SEMUA hasil parsing
+                    'education': structured_profile.get('education'),
+                    'experience': structured_profile.get('experience'),
                     'status': 'passed_filter'
                 })
         except Exception as e:
@@ -125,7 +131,6 @@ def upload_and_process_cvs(job_id):
                 os.remove(file_path)
     
     return jsonify(report), 200
-
 
 @hr_bp.route('/jobs/<job_id>/candidates', methods=['GET'])
 def get_ranked_candidates(job_id):
@@ -187,7 +192,7 @@ def get_jobs_list():
         jobs = databases.get_all_jobs()
         return jsonify(jobs)
     except Exception as e:
-        return jsonify({"error": "Gagal mengambil daftar pekerjaan", "details": str(e)}), 500
+        return jsonify({"error": "Failed to fetch job list", "details": str(e)}), 500
 
 # JOB POSTING ROUTES
 @hr_bp.route("/jobs/create", methods=["POST"])
