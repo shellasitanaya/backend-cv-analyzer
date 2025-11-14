@@ -15,8 +15,6 @@ class Job(db.Model):
     max_experience = db.Column(db.Integer)
     degree_requirements = db.Column(db.String(100))
     requirements_json = db.Column(db.JSON)
-    skills_json = db.Column(db.JSON)
-    additional_info_json = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     hr_user = db.relationship("User", back_populates="jobs")

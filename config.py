@@ -12,7 +12,10 @@ class Config:
 
     # Build MySQL connection string (using PyMySQL driver)
     SQLALCHEMY_DATABASE_URI = (
+        f"mysql+pymysql://{DB_USER}@{DB_HOST}/{DB_NAME}"
+        if not DB_PASSWORD else
         f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
     )
+
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False  # disables overhead warning

@@ -1,18 +1,18 @@
-from flask import Blueprint, jsonify, send_file, request, current_app
-from flask import Blueprint, jsonify, send_file, request, current_app
-from app.services.cv_generator import build_cv
+from flask import Blueprint, send_file, request, current_app, jsonify
+from app.services.cv_generator import build_cv, build_cv_from_data
 from app.models import Candidate
 import os
 from PIL import Image
 import pytesseract
 
-
-
 cv_bp = Blueprint("cv", __name__)
 
 # === [1] Upload CV Gambar untuk OCR ===
-@cv_bp.route("/upload_cv", methods=["POST"])
+@cv_bp.route("/upload_cv", methods=["POST", "OPTIONS"])
 def upload_cv():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "success"}), 200
+        
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -29,11 +29,13 @@ def upload_cv():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 # === [2] Generate CV PDF dari tabel Candidate ===
-@cv_bp.route("/api/cv/generate/<candidate_id>", methods=["GET"])
+@cv_bp.route("/generate/<candidate_id>", methods=["GET", "OPTIONS"])
 def generate_cv(candidate_id):
-    print(f"🔍 Candidate ID recieved: {candidate_id}")
+    if request.method == "OPTIONS":
+        return jsonify({"status": "success"}), 200
+        
+    print(f"🔍 Candidate ID received: {candidate_id}")
 
     candidate = Candidate.query.filter_by(id=candidate_id).first()
     if not candidate:
@@ -50,49 +52,62 @@ def generate_cv(candidate_id):
         return jsonify({"error": f"Failed to generate CV: {e}"}), 500
 
 # === [3] Generate CV dari input manual ===
-@cv_bp.route("/api/cv/generate_custom", methods=["POST"])
+@cv_bp.route("/generate_custom", methods=["POST", "OPTIONS"])
 def generate_custom_cv():
-    data = request.get_json()
-    template_name = data.get("template", "modern")
-
-    try:
-        # Simpan data sementara
-        from jinja2 import Environment, FileSystemLoader
-        from weasyprint import HTML
-        import tempfile
-
-        template_dir = os.path.join(current_app.root_path, "template")
-        env = Environment(loader=FileSystemLoader(template_dir))
-        template = env.get_template(f"{template_name}.html")
-
-        rendered_html = template.render(data=data)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-            HTML(string=rendered_html).write_pdf(tmp_pdf.name)
-            return send_file(tmp_pdf.name, as_attachment=True, download_name="generated_cv.pdf")
-
-    except Exception as e:
-        print(f"❌ Error generating CV: {e}")
-        return jsonify({"error": str(e)}), 500
-
-@cv_bp.route("/api/cv/preview", methods=["POST"])
-def preview_cv():
-    """
-    Generate CV PDF langsung dari data yang dikirim user (tanpa database)
-    """
-    from app.services.cv_generator import build_cv_from_data
-    from flask import send_file, jsonify, request
-
+    if request.method == "OPTIONS":
+        return jsonify({"status": "success"}), 200
+        
     try:
         data = request.get_json()
         if not data:
             return jsonify({"error": "No data provided"}), 400
 
+        print("🔍 [GENERATE_CUSTOM] Received request")
+        template_name = data.get("template", "modern")
+
+        # Use build_cv_from_data instead of manual template rendering
+        from app.services.cv_generator import build_cv_from_data
+        
+        output_path = build_cv_from_data(data, template_name)
+        return send_file(output_path, as_attachment=True, download_name="generated_cv.pdf")
+
+    except Exception as e:
+        print(f"❌ [GENERATE_CUSTOM] Error: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ [GENERATE_CUSTOM] Traceback:\n{error_details}")
+        
+        return jsonify({
+            "error": "Failed to generate CV",
+            "details": str(e),
+            "type": type(e).__name__
+        }), 500
+    
+# === [4] Preview CV (endpoint yang digunakan frontend) ===
+@cv_bp.route("/preview", methods=["POST", "OPTIONS"])
+def preview_cv():
+    """
+    Generate CV PDF langsung dari data yang dikirim user (tanpa database)
+    """
+    if request.method == "OPTIONS":
+        return jsonify({"status": "success"}), 200
+        
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        print("🔍 [ROUTE] Received CV generation request")
         template = data.get("template", "modern")
+        
         output_path = build_cv_from_data(data, template)
         return send_file(output_path, mimetype="application/pdf", as_attachment=False)
 
+    except FileNotFoundError as e:
+        print(f"❌ [ROUTE] Template not found: {e}")
+        return jsonify({"error": f"Template not found: {str(e)}"}), 404
     except Exception as e:
-        print(f"❌ Error generating CV preview: {e}")
-        return jsonify({"error": str(e)}), 500
-
+        print(f"❌ [ROUTE] Error generating CV preview: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to generate CV: {str(e)}"}), 500
