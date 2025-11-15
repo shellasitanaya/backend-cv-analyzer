@@ -156,8 +156,10 @@ def parse_candidate_info(text, required_skills=[]):
         best_name = extract_name_with_fallback(text)
 
     #  Normalisasi akhir
+    # nama
     extracted_data["name"] = normalize_name(best_name)
 
+    # education
     text_lower = text.lower()
     if any(keyword in text_lower for keyword in ["s2", "master", "magister"]):
         extracted_data["education"] = "S2"
@@ -166,22 +168,26 @@ def parse_candidate_info(text, required_skills=[]):
     elif any(keyword in text_lower for keyword in ["d3", "diploma"]):
         extracted_data["education"] = "D3"
 
+    # email
     email_match = re.search(
         r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", text
     )
     if email_match:
         extracted_data["email"] = email_match.group(0)
 
+    # phone
     phone_match = re.search(r"(\+62|0)8[1-9][0-9]{7,10}\b", text)
     if phone_match:
         extracted_data["phone"] = phone_match.group(0)
 
+    # skills
     found_skills = set()
     for keyword in required_skills:
         if keyword in text_lower:
             found_skills.add(keyword.title())
     extracted_data["skills"] = list(found_skills)
 
+    # gpa
     gpa_match = None
     pattern_with_keyword = r"(gpa|ipk)\s*:?\s*([0-4][.,]\d+)"
     gpa_match = re.search(pattern_with_keyword, text_lower)
@@ -194,14 +200,58 @@ def parse_candidate_info(text, required_skills=[]):
         gpa_string = gpa_match.group(gpa_match.lastindex)
         gpa_string_standard = gpa_string.replace(",", ".")
         extracted_data["gpa"] = float(gpa_string_standard)
+        
+    # experience
+    experience_section_text = ""
+    # Cari header "Experience" atau "Pengalaman Kerja"
+    section_match = re.search(
+        r"(?:work\s+experience|pengalaman\s+kerja|experience)(.*)", 
+        text, 
+        re.IGNORECASE | re.DOTALL
+    )
+    
+    if section_match:
+        following_text = section_match.group(1)
+        # Cari header berikutnya (Education, Skills, Projects, dll.)
+        next_section_match = re.search(
+            r"(?:education|pendidikan|skills|keterampilan|projects|projek|organization|organisasi)", 
+            following_text, 
+            re.IGNORECASE
+        )
+        
+        if next_section_match:
+            # Ambil teks di antara dua section
+            experience_section_text = following_text[:next_section_match.start()]
+        else:
+            # Jika tidak ada section lain, ambil semua sisa teks
+            experience_section_text = following_text
+    
+    detailed_experiences = []
+    if experience_section_text:
+        lines = experience_section_text.strip().splitlines()
+        
+        # Pola untuk mendeteksi baris yang mengandung rentang tahun atau tanggal
+        date_pattern = r"(\d{4}\s*-\s*(\d{4}|present|sekarang)|\(\d{4}\s*-\s*(\d{4}|present|sekarang)\)|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s*\d{4})"
+        
+        for line in lines:
+            line_stripped = line.strip()
+            # Jika baris tidak kosong DAN mengandung pola tanggal
+            if line_stripped and re.search(date_pattern, line_stripped, re.IGNORECASE):
+                # Bersihkan bullet points (-, *, •)
+                clean_line = re.sub(r"^\s*[\*•-]\s*", "", line_stripped)
+                # Pastikan baris mengandung lebih dari 2 kata (bukan cuma tanggal)
+                if len(clean_line.split()) > 2: 
+                    detailed_experiences.append(clean_line)
 
+    extracted_data["experience"] = detailed_experiences 
+
+    # Hitung total tahun pengalaman dari section pengalaman
     year_ranges = re.findall(
         r"(\d{4})\s*-\s*(\d{4}|present|sekarang)", text, re.IGNORECASE
     )
     total_years = 0
     current_year = datetime.datetime.now().year
 
-    # pengalaman BELOMM
     for start_year, end_year in year_ranges:
         try:
             start = int(start_year)
@@ -224,7 +274,8 @@ def parse_candidate_info(text, required_skills=[]):
             total_years = int(exp_match.group(1))
 
     # Memberikan batas atas yang wajar agar hasilnya tidak terlalu tinggi
-    extracted_data["experience"] = min(total_years, 15)
+    # extracted_data["experience"] = min(total_years, 15)
+
 
     return extracted_data
 
@@ -242,126 +293,7 @@ def calculate_match_score(cv_text, job_desc_text):
     return round(score * 100, 2)
 
 
-# --- TESTING ---
-if __name__ == "__main__":
-    # Teks CV yang sama untuk diuji
-    sample_cv_text = """
-    CHARLES WIJAYA
 
-Member of Information System Department
-BEM (Badan Eksekutif Mahasiswa) is an organization dedicated to fostering the growth of students at Petra Christian
-University and overseeing extracurricular activities within PCU. I am honored to have been entrusted with the role of member
-of Information Systems within the BEM organization. Our mission, within the Information Systems department, is to develop
-systems that facilitate both internal and external activities of the organization. For instance, this involves creating websites to
-streamline bureaucratic processes within our university and enhancing administrative tasks within the organization.The
-Information Systems team within BEM will be utilizing frameworks for both backend and frontend development, specifically
-Laravel and ReactJS.
-
-081938363287 | charleswijaya04@gmail.com | https://www.linkedin.com/in/charles-wijaya-653955285/
-
-Dukuh Kupang Timur XV / 60
-
-I am a Data Science and Analytics student at Petra Christian University with expertise in data analysis, machine
-learning, and software development. I have experience in processing, analyzing, and visualizing data using
-programming languages such as Python, SQL, and R. Additionally, I have experience in application development
-using backend frameworks like Laravel and Node.js, as well as frontend frameworks like React, Vue.js, Tailwind,
-and Bootstrap. I am passionate about continuously learning and developing innovative solutions in the fields of
-data and technology.
-
-Informatics Rally Games and Logic 2023
-Feb 2023 - Nov 2023
-
-Member of IT Game Division
-Informatics Rally Games and Logic 2023, a dynamic competition where participants have the chance to play and enjoy a
-variety of games developed by students. In this event, students have created and developed their own games using platforms
-like Unity, showcasing their creativity and technical skills. As a contributor to this initiative, I have developed one of the featured games,   
-focusing on delivering an engaging and innovative gaming experience.
-
-Work Experiences
-
-Petra Christian University
-Jul 2023 - Present
-
-Assistant Lecturer
-I am deeply appreciative of the chance to serve as an Assistant Lecturer at Petra Christian University. In this role, I have
-actively contributed by supporting faculty members in teaching students who face difficulties in certain subjects. By providing
-additional guidance, I aim to help students overcome their challenges and enhance their understanding of the material. This
-collaborative effort not only supports the teaching staff but also enriches the students' learning experience, ultimately
-contributing to their academic success.
-
-Petra Christian University
-Jul 2024 - Present
-
-Lab Assistant
-I work as a lab assistant at Universitas Kristen Petra, where my primary responsibilities include managing the laboratory and handling
-administrative tasks to support academic activities. In this role, I ensure that all lab equipment functions properly and is ready for use,      
-while also helping maintain a conducive learning environment. Additionally, I assist lecturers with administrative tasks such as preparing       
-course materials, tracking student attendance, and assisting in report preparation. Through this role, I have developed skills in
-management, coordination, and improving operational efficiency in the lab.
-
-Education Level
-
-UK Petra - Jl. Siwalankerto No.121-131, Siwalankerto, Kec. Wonocolo, Surabaya,
-Jawa Timur 60236
-
-Jul 2022 - Jul 2026 (Expected)
-
-Bachelor Degree in Petra Christian University, 3.97/4.00
-    """
-
-    print("\n--- Menguji Fungsi Parsing Info dengan Model NER Indonesia (BERT) ---")
-    parsed_info = parse_candidate_info(sample_cv_text)
-
-    print("\nHasil Parsing:")
-    pprint.pprint(parsed_info)
-
-    from typing import Dict, List, Union
-
-# Muat model bahasa Inggris dari spaCy - pindahkan ke bagian atas sebelum fungsi
-try:
-    nlp: Language = spacy.load("en_core_web_sm")
-except OSError:
-    print(
-        "Model 'en_core_web_sm' tidak ditemukan. Jalankan 'python -m spacy download en_core_web_sm'"
-    )
-    nlp = None
-
-# Daftar sederhana kata kunci skill untuk dicari
-SKILL_KEYWORDS: List[str] = [
-    "python",
-    "java",
-    "c++",
-    "javascript",
-    "react",
-    "reactjs",
-    "node.js",
-    "nodejs",
-    "flask",
-    "django",
-    "spring boot",
-    "html",
-    "css",
-    "tailwind",
-    "sql",
-    "mysql",
-    "postgresql",
-    "mongodb",
-    "database",
-    "docker",
-    "git",
-    "aws",
-    "api",
-    "rest api",
-    "machine learning",
-    "data analysis",
-    "data science",
-    "business intelligence",
-    "seo",
-    "digital marketing",
-    "content marketing",
-    "sem",
-    "google analytics",
-]
 
 
 def check_ats_friendliness(text: str) -> Dict[str, Union[Dict[str, bool], List[str]]]:

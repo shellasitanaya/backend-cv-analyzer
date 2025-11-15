@@ -3,10 +3,11 @@ from werkzeug.utils import secure_filename
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request, get_jwt
 import os
 import json
+import pprint
 from app.models import Job
 
 from app.services.cv_parser import extract_text
-from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
+from app.services.ai_analyzer import parse_candidate_info, calculate_match_score, BUSINESS_ANALYST_SKILLS, DATA_ENGINEER_SKILLS
 from app.extensions import db
 import app.databases as databases
 from app.services.talent_search import search_candidates  
@@ -53,21 +54,44 @@ def upload_and_process_cvs(job_id):
     job_requirements = {'min_gpa': job.min_gpa, 'min_experience': job.min_experience}
     job_description = job.job_description or ''
     
-    skills_json_string = job.requirements_json
-    skills_from_job = {}
+    job_title_lower = job.job_title.lower() # Ambil judul pekerjaan, cth: "it data engineer - taf"
+    selected_skills_list = []
 
-    if skills_json_string and isinstance(skills_json_string, str):
-        skills_from_job = json.loads(skills_json_string)
-    elif isinstance(skills_json_string, dict):
-        skills_from_job = skills_json_string
+    # Pilih list skill berdasarkan kata kunci di judul pekerjaan
+    if "data engineer" in job_title_lower:
+        selected_skills_list = DATA_ENGINEER_SKILLS
+        print(f"[DEBUG] Memakai skill list: DATA_ENGINEER_SKILLS untuk job '{job.job_title}'")
+        
+    elif "business analyst" in job_title_lower:
+        selected_skills_list = BUSINESS_ANALYST_SKILLS
+        print(f"[DEBUG] Memakai skill list: BUSINESS_ANALYST_SKILLS untuk job '{job.job_title}'")
+        
+    else:
+        # Fallback jika judul pekerjaan tidak cocok
+        print(f"[WARNING] Tidak ada list skill hardcoded untuk job: {job.job_title}")
+        selected_skills_list = [] # Kosongkan jika tidak ada yg cocok
 
-    required_skills = (
-        skills_from_job.get('hard_skills', []) + 
-        skills_from_job.get('soft_skills', []) + 
-        skills_from_job.get('optional_skills', [])
-    )
+    # Pastikan semua skill dalam huruf kecil untuk dicocokkan
+    required_skills_lower = [skill.lower() for skill in selected_skills_list]
+    
+    
+    # job_description = job.job_description or ''
+    
+    # skills_json_string = job.requirements_json
+    # skills_from_job = {}
+
+    # if skills_json_string and isinstance(skills_json_string, str):
+    #     skills_from_job = json.loads(skills_json_string)
+    # elif isinstance(skills_json_string, dict):
+    #     skills_from_job = skills_json_string
+
+    # required_skills = (
+    #     skills_from_job.get('hard_skills', []) + 
+    #     skills_from_job.get('soft_skills', []) + 
+    #     skills_from_job.get('optional_skills', [])
+    # )
    
-    required_skills_lower = [skill.lower() for skill in required_skills]
+
 
     report = {"passed_count": 0, "rejected_count": 0, "rejection_details": {}}
 
@@ -82,6 +106,11 @@ def upload_and_process_cvs(job_id):
             cv_text = extract_text(file_path)
 
             structured_profile = parse_candidate_info(cv_text, required_skills=required_skills_lower)
+            
+            # DEBUG: print structured profile
+            print(f"[DEBUG] Hasil Parsing (Structured Profile) dari: {filename}")
+            pprint.pprint(structured_profile)
+            print("=" * 60)
             
             rejection_reason = None
             
@@ -105,6 +134,7 @@ def upload_and_process_cvs(job_id):
                     'phone': structured_profile.get('phone'),
                     'education': structured_profile.get('education'), 
                     'experience': structured_profile.get('experience'), 
+                    'total_experience': structured_profile.get('total_experience'),
                     'status': 'rejected', 
                     'storage_path': file_path,
                     'rejection_reason': rejection_reason
@@ -122,6 +152,7 @@ def upload_and_process_cvs(job_id):
                     'storage_path': file_path,
                     'education': structured_profile.get('education'),
                     'experience': structured_profile.get('experience'),
+                    'total_experience': structured_profile.get('total_experience'),
                     'status': 'passed_filter'
                 })
         except Exception as e:
@@ -144,8 +175,13 @@ def get_ranked_candidates(job_id):
         # Hapus filter yang nilainya kosong
         active_filters = {k: v for k, v in filters.items() if v}
         
+        if 'min_exp' in active_filters:
+            active_filters['total_experience'] = active_filters.pop('min_exp')
+        
+        # Kirim filter yang sudah bersih ke fungsi database
         candidates = databases.get_all_candidates_for_job(job_id, active_filters)
         return jsonify(candidates)
+        
     except Exception as e:
         return jsonify({"error": f"Gagal mengambil data dari database: {e}"}), 500
     
