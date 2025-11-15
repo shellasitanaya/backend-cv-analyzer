@@ -13,18 +13,26 @@ logger = logging.getLogger(__name__)
 
 class CVGeneratorWithAI:
     def __init__(self):
-        # GANTI DENGAN GEMINI API KEY YANG VALID
-        self.api_key = 'AIzaSyDetnJo_x25cWqw44DVTb0an0aCo-6V3Ss'
+        # AMBIL API KEY DARI ENVIRONMENT VARIABLE
+        self.api_key = os.getenv('GEMINI_API_KEY')
         self._ai_model = None
     
-        print(f"🔍 [DEBUG] API Key: {self.api_key[:10]}...{self.api_key[-10:] if self.api_key else 'EMPTY'}")
-        print(f"🔍 [DEBUG] API Key length: {len(self.api_key) if self.api_key else 0}")
+        print(f"🔍 [DEBUG] API Key from env: {'✅ Found' if self.api_key else '❌ Not found'}")
+        if self.api_key:
+            print(f"🔍 [DEBUG] API Key length: {len(self.api_key)}")
+            print(f"🔍 [DEBUG] API Key preview: {self.api_key[:10]}...{self.api_key[-10:]}")
+        else:
+            logger.warning("⚠️ GEMINI_API_KEY environment variable not found")
 
     @property
     def ai_model(self):
         """Lazy initialization of AI model"""
         if self._ai_model is None:
             try:
+                if not self.api_key:
+                    logger.error("❌ No API key available")
+                    return None
+                    
                 genai.configure(api_key=self.api_key)
                 self._ai_model = genai.GenerativeModel('models/gemini-2.5-flash-lite')
                 logger.info("✅ AI model initialized successfully")

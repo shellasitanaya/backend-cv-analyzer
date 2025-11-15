@@ -9,6 +9,7 @@ class Config:
     DB_USER = os.getenv('DB_USER')
     DB_PASSWORD = os.getenv('DB_PASSWORD')
     DB_NAME = os.getenv('DB_NAME')
+    GEMINI_API_KEY=os.getenv('AIzaSyBYaHWgdsSGmDeB-fg0F8H7VHi5w9B3T9U')
 
     # Build MySQL connection string (using PyMySQL driver)
     SQLALCHEMY_DATABASE_URI = (
