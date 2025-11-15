@@ -64,11 +64,12 @@ def generate_custom_cv():
 
         print("🔍 [GENERATE_CUSTOM] Received request")
         template_name = data.get("template", "modern")
+        use_ai_phrasing = data.get("use_ai_phrasing", True)  # Default true
 
-        # Use build_cv_from_data instead of manual template rendering
+        # Use build_cv_from_data with AI phrasing parameter
         from app.services.cv_generator import build_cv_from_data
         
-        output_path = build_cv_from_data(data, template_name)
+        output_path = build_cv_from_data(data, template_name, use_ai_phrasing)
         return send_file(output_path, as_attachment=True, download_name="generated_cv.pdf")
 
     except Exception as e:
@@ -99,8 +100,9 @@ def preview_cv():
 
         print("🔍 [ROUTE] Received CV generation request")
         template = data.get("template", "modern")
+        use_ai_phrasing = data.get("use_ai_phrasing", True)  # Default true
         
-        output_path = build_cv_from_data(data, template)
+        output_path = build_cv_from_data(data, template, use_ai_phrasing)
         return send_file(output_path, mimetype="application/pdf", as_attachment=False)
 
     except FileNotFoundError as e:
