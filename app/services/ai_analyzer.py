@@ -147,6 +147,77 @@ def calculate_match_score(cv_text, job_desc_text):
         print(f"Error TfidfVectorizer (mungkin CV kosong): {e}")
         return 0.0
 
+# Di file: app/services/ai_analyzer.py
+# (Pastikan import 'genai', 'json', 'os', dll sudah ada di atas)
+
+def get_ai_match_score(cv_text, job_description_text):
+    """
+    Menghitung match score menggunakan AI (Gemini) untuk perbandingan semantik.
+    Ini jauh lebih akurat daripada TF-IDF.
+    """
+    
+    try:
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
+    except Exception as e:
+        print(f"ERROR: Tidak bisa memuat model Gemini: {e}")
+        return {"score": 0, "reasoning": "Model AI tidak tersedia."}
+
+    # Skema JSON yang kita inginkan sebagai output dari AI
+    json_schema = {
+        "match_score": 0, # Angka 0-100
+        "reasoning": "Penjelasan singkat mengapa skornya segitu (pro & cons)",
+        "matched_skills": ["Skill 1", "Skill 2"],
+        "missing_skills": ["Skill 3", "Skill 4"]
+    }
+    
+    # Prompt yang kuat untuk perbandingan
+    prompt = f"""
+    Anda adalah seorang Head of Talent Acquisition (HR) yang sangat berpengalaman.
+    Tugas Anda adalah menilai CV kandidat berdasarkan deskripsi pekerjaan (Job Description) yang diberikan.
+    
+    Kembalikan jawaban HANYA dalam format JSON yang valid, TANPA teks tambahan di awal atau akhir.
+    
+    Skema JSON yang WAJIB Anda ikuti:
+    {json.dumps(json_schema, indent=2)}
+
+    INSTRUKSI PENTING:
+    1.  **Analisis CV:** Baca CV kandidat ini:
+        ---[CV KANDIDAT]---
+        {cv_text}
+        ---[AKHIR CV]---
+    
+    2.  **Analisis Job Description:** Baca Job Description (JD) ini:
+        ---[JOB DESCRIPTION]---
+        {job_description_text}
+        ---[AKHIR JD]---
+
+    3.  **Lakukan Penilaian:**
+        -   Bandingkan pengalaman, skill, dan edukasi di CV dengan yang diminta di JD.
+        -   **Pahami KONTEKS.** Jika JD minta "5 tahun pengalaman Python" dan CV hanya menulis "kursus Python", itu BUKAN match yang kuat.
+        -   **Pahami SINONIM.** Jika JD minta "Leadership" dan CV menulis "Team Lead" atau "Manajer", itu adalah match.
+    
+    4.  **Isi JSON Output:**
+        -   **match_score:** Berikan skor angka (INTEGER) dari 0 sampai 100 yang merepresentasikan seberapa cocok kandidat ini.
+        -   **reasoning:** Tulis 1-2 kalimat alasan (pro/cons) dari skor Anda.
+        -   **matched_skills:** Daftar skill dari JD yang ditemukan di CV.
+        -   **missing_skills:** Daftar skill PENTING dari JD yang TIDAK ditemukan di CV.
+
+    JSON Output:
+    """
+
+    try:
+        print(f"[DEBUG] Memanggil API Gemini untuk SCORING...")
+        generation_config = genai.GenerationConfig(
+            response_mime_type="application/json"
+        )
+        response = model.generate_content(prompt, generation_config=generation_config)
+        
+        parsed_data = json.loads(response.text)
+        return parsed_data
+
+    except Exception as e:
+        print(f"ERROR: Gagal memanggil API scoring Gemini: {e}")
+        return {"score": 0, "reasoning": f"Gagal parsing: {e}"}
 
 
 

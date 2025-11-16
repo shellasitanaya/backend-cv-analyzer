@@ -14,7 +14,8 @@ from app.models import Job
 from app.services.cv_parser import extract_text
 from app.services.ai_analyzer import (
     parse_candidate_info,
-    calculate_match_score,
+    get_ai_match_score,
+    # calculate_match_score,
     BUSINESS_ANALYST_SKILLS,
     DATA_ENGINEER_SKILLS,
 )
@@ -210,10 +211,28 @@ def upload_and_process_cvs(job_id):
             else:
                 # 3. Tambahkan info jika lolos
                 report["passed_count"] += 1
-                score = calculate_match_score(cv_text, job_description)
+                # score = calculate_match_score(cv_text, job_description)
 
-                candidate_data["status"] = "passed_filter"
-                candidate_data["score"] = score
+                # candidate_data["status"] = "passed_filter"
+                # candidate_data["score"] = score
+                
+                # Panggil fungsi scoring AI yang baru
+                ai_result = get_ai_match_score(cv_text, job_description) 
+                
+                # ⬇️ ⬇️ TAMBAHKAN DEBUG PRINT DI SINI ⬇️ ⬇️
+                print(f"--- [DEBUG] Alasan Scoring AI untuk {filename} ---")
+                pprint.pprint(ai_result)
+                print("--------------------------------------------------")
+                # ⬆️ ⬆️ AKHIR DARI DEBUG PRINT ⬆️ ⬆️
+                
+                
+
+                candidate_data['status'] = 'passed_filter'
+                candidate_data['score'] = ai_result.get('match_score', 0)
+                
+                # (OPSIONAL TAPI DISARANKAN) 
+                # Simpan alasan AI ke database jika Anda punya kolomnya
+                # candidate_data['ai_reasoning'] = ai_result.get('reasoning')
 
                 databases.save_candidate(job_id, candidate_data)  # Kirim data lengkap
 
