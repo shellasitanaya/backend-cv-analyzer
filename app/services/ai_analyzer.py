@@ -118,7 +118,8 @@ def parse_candidate_info(text, required_skills=[]):
         "email": None,
         "phone": None,
         "gpa": None,
-        "experience": 0,
+        "experience": [],
+        "total_experience": 0,
         "skills": [],
         "education": None,
     }
@@ -245,7 +246,7 @@ def parse_candidate_info(text, required_skills=[]):
 
     extracted_data["experience"] = detailed_experiences 
 
-    # Hitung total tahun pengalaman dari section pengalaman
+    # Total Experience
     year_ranges = re.findall(
         r"(\d{4})\s*-\s*(\d{4}|present|sekarang)", text, re.IGNORECASE
     )
@@ -257,7 +258,7 @@ def parse_candidate_info(text, required_skills=[]):
             start = int(start_year)
             end = (
                 current_year
-                if end_year.lower() in ["present", "sekarang"]
+                if end_year.lower() in ["present", "sekarang", "now"]
                 else int(end_year)
             )
             duration = end - start
