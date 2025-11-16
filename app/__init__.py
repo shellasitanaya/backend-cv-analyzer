@@ -8,6 +8,9 @@ from .routes.js_routes import js_bp
 from .routes.cv_routes import cv_bp
 from app.routes.auth_routes import auth_bp
 from app.database.seed.seed_all import seed_all  
+from .routes.experience import experience_bp
+from .routes.skills import skills_bp
+
 
 def create_app():
     app = Flask(__name__)
@@ -30,7 +33,8 @@ def create_app():
     app.register_blueprint(hr_bp)
     app.register_blueprint(js_bp) 
     app.register_blueprint(cv_bp) 
-
+    app.register_blueprint(skills_bp)
+    app.register_blueprint(experience_bp)
 
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
