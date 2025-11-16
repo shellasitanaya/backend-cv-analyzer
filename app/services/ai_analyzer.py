@@ -3,296 +3,149 @@ import re
 import pprint
 import datetime
 import warnings
+import os
+import json
+import re
+import google.generativeai as genai
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from spacy.language import Language
 from typing import List, Dict, Union
+from dotenv import load_dotenv
 
+
+# --- 1. KONFIGURASI MODEL AI (Gemini) ---
+load_dotenv()
 try:
-    from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
-    import torch
-
-    warnings.filterwarnings("ignore", "Some weights of the model were not initialized")
-except ImportError:
-    print(
-        "ERROR: Pustaka 'transformers' atau 'torch' tidak ditemukan. Harap install dengan 'pip install transformers torch'"
-    )
-
-# Inisialisasi NER Pipeline menggunakan BERT Indonesia
-NER_INDONESIA_PIPELINE = None
-try:
-    model_name = "cahya/bert-base-indonesian-NER"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForTokenClassification.from_pretrained(model_name)
-    NER_INDONESIA_PIPELINE = pipeline(
-        "ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple"
-    )
-    print(f"--- Model NER Indonesia '{model_name}' (Hugging Face) berhasil dimuat. ---")
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        print("ERROR: GOOGLE_API_KEY tidak ditemukan. Pastikan ada di file .env")
+    else:
+        genai.configure(api_key=api_key)
+        print("--- Model Generatif Google (Gemini) berhasil dikonfigurasi. ---")
 except Exception as e:
-    print(f"ERROR: Gagal memuat model NER Indonesia: {e}")
+    print(f"ERROR: Gagal mengkonfigurasi Gemini: {e}")
 
-# # Daftar kata kunci skill untuk dicari
+
+# --- 2. DAFTAR SKILL (Tidak kita pakai di prompt, tapi tetap di-load) ---
 BUSINESS_ANALYST_SKILLS = [
-    # Hard Skills
-    "Business Process Modeling",
-    "Requirement Gathering",
-    "SAP",
-    "ERP",
-    "SQL",
-    "Finance",
-    # Soft Skills
-    "Communication",
-    "Analytical Thinking",
-    "Negotiation",
-    "Stakeholder Management",
-    # Optional Skills
-    "Project Management",
-    "Agile",
-    "Scrum",
+    "Business Process Modeling", "Requirement Gathering", "SAP", "ERP", "SQL", 
+    "Finance", "Communication", "Analytical Thinking", "Negotiation", 
+    "Stakeholder Management", "Project Management", "Agile", "Scrum",
 ]
-
-
 DATA_ENGINEER_SKILLS = [
-    # Hard Skills
-    "Python",
-    "SQL",
-    "ETL",
-    "Data Warehousing",
-    "Spark",
-    "Airflow",
-    # Soft Skills
-    "Problem Solving",
-    "Analytical Thinking",
-    "Data-driven",
-    # Optional Skills
-    "AWS",
-    "GCP",
-    "Tableau",
-    "Power BI",
+    "Python", "SQL", "ETL", "Data Warehousing", "Spark", "Airflow", 
+    "Problem Solving", "Analytical Thinking", "Data-driven", "AWS", 
+    "GCP", "Tableau", "Power BI",
 ]
 
 
-def normalize_name(name: str) -> str:
-    """Normalisasi nama: kapitalisasi tiap kata, kecuali singkatan full uppercase."""
-    if not name:
-        return None
-    words = name.split()
-    normalized_words = []
-    for w in words:
-        if w.isupper():
-            normalized_words.append(w)
-        else:
-            normalized_words.append(w.capitalize())
-    return " ".join(normalized_words)
+# --- 3. FUNGSI PARSING UTAMA (Sekarang menggunakan AI) ---
 
-
-def extract_name_with_fallback(text):
-    # cari baris sebelum email
-    lines = text.strip().splitlines()
-    for i, line in enumerate(lines):
-        if re.search(r"@", line) or re.search(r"\d{9,}", line):  # baris email/phone
-            if i > 0:
-                candidate = lines[i - 1].strip()
-                # pastikan bukan "Member of..." atau kata teknis
-                if len(candidate.split()) >= 2 and not re.search(
-                    r"(Member|Division|Tech Stack|github|linkedin)",
-                    candidate,
-                    re.IGNORECASE,
-                ):
-                    return candidate
-    return None
-
-
-def parse_candidate_info(text, required_skills=[]):
+def parse_candidate_info(cv_text, required_skills=[]):
     """
-    Mengekstrak informasi terstruktur:
-    - Nama: Menggunakan BERT NER Indonesia.
-    - Lainnya: Menggunakan Regex dan Keyword Matching.
+    Mengekstrak info kandidat menggunakan Model AI (Gemini)
+    untuk mendapatkan hasil yang jauh lebih akurat daripada Regex.
     """
-    if NER_INDONESIA_PIPELINE is None:
-        print("ERROR: Model NER Indonesia tidak dimuat, parsing dibatalkan.")
-        return {}
+    
+    # Definisikan model
+    try:
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
+    except Exception as e:
+        print(f"ERROR: Tidak bisa memuat model Gemini: {e}")
+        return {} 
 
-    extracted_data = {
-        "name": None,
-        "email": None,
-        "phone": None,
-        "gpa": None,
-        "experience": [],
-        "total_experience": 0,
-        "skills": [],
-        "education": None,
+    # Ini adalah struktur JSON yang WAJIB dipatuhi oleh sisa aplikasi Anda.
+    # AI akan kita paksa untuk mengikuti skema ini.
+    json_schema = {
+        "name": "Nama lengkap kandidat (string)",
+        "email": "Email kandidat (string, null jika tidak ada)",
+        "phone": "Nomor telepon kandidat (string, null jika tidak ada)",
+        "gpa": "IPK sebagai angka float (float, null jika tidak ada)",
+        "education": "Tingkat pendidikan (string, misal: S1, S2, null jika tidak ada)",
+        # --- PERUBAHAN DI SINI ---
+        "skills": ["skill 1", "skill 2"], # List SEMUA skill yang ditemukan di CV (bukan hanya yang cocok)
+        # -------------------------
+        "experience": ["Jabatan 1 di Perusahaan 1 (Tanggal 1 - Tanggal 2)", "Jabatan 2 (Tanggal 3 - Tanggal 4)"], # List detail pengalaman
+        "total_experience": 0 # Total tahun pengalaman sebagai ANGKA INTEGER
     }
-
-    short_text = " ".join(text.split()[:100])
-    ner_results = NER_INDONESIA_PIPELINE(short_text)
-
-    print("\n--- [DEBUG] Semua Entitas PERSON (PER) yang Ditemukan BERT NER ---")
-    all_person_entities = []
-    for ent in ner_results:
-        if ent["entity_group"] == "PER":
-            word = ent["word"].replace(" ##", "").replace("##", "").strip()
-            all_person_entities.append(word)
-    print(all_person_entities)
-    print("----------------------------------------------------")
-
-    best_name = None
-    if all_person_entities:
-        best_name = max(all_person_entities, key=len)
-        if len(best_name.split()) == 1 and not best_name.isupper():
-            best_name = None
-
-    # Fallback regex (ambil first line kalau masuk akal)
-    if not best_name:
-        lines = text.strip().splitlines()
-        if lines:
-            first_line = lines[0].strip()
-            if not re.search(r"@|\d|https?://", first_line):
-                best_name = first_line
-            elif first_line.isupper() and len(first_line.split()) >= 2:
-                best_name = first_line
-
-    # Fallback tambahan (cari baris sebelum email/phone)
-    if not best_name:
-        best_name = extract_name_with_fallback(text)
-
-    #  Normalisasi akhir
-    # nama
-    extracted_data["name"] = normalize_name(best_name)
-
-    # education
-    text_lower = text.lower()
-    if any(keyword in text_lower for keyword in ["s2", "master", "magister"]):
-        extracted_data["education"] = "S2"
-    elif any(keyword in text_lower for keyword in ["s1", "bachelor", "sarjana"]):
-        extracted_data["education"] = "S1"
-    elif any(keyword in text_lower for keyword in ["d3", "diploma"]):
-        extracted_data["education"] = "D3"
-
-    # email
-    email_match = re.search(
-        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", text
-    )
-    if email_match:
-        extracted_data["email"] = email_match.group(0)
-
-    # phone
-    phone_match = re.search(r"(\+62|0)8[1-9][0-9]{7,10}\b", text)
-    if phone_match:
-        extracted_data["phone"] = phone_match.group(0)
-
-    # skills
-    found_skills = set()
-    for keyword in required_skills:
-        if keyword in text_lower:
-            found_skills.add(keyword.title())
-    extracted_data["skills"] = list(found_skills)
-
-    # gpa
-    gpa_match = None
-    pattern_with_keyword = r"(gpa|ipk)\s*:?\s*([0-4][.,]\d+)"
-    gpa_match = re.search(pattern_with_keyword, text_lower)
-
-    if not gpa_match:
-        pattern_without_keyword = r"([0-4][.,]\d+)\s*\/\s*4[.,]0+"
-        gpa_match = re.search(pattern_without_keyword, text_lower)
-
-    if gpa_match:
-        gpa_string = gpa_match.group(gpa_match.lastindex)
-        gpa_string_standard = gpa_string.replace(",", ".")
-        extracted_data["gpa"] = float(gpa_string_standard)
-        
-    # experience
-    experience_section_text = ""
-    # Cari header "Experience" atau "Pengalaman Kerja"
-    section_match = re.search(
-        r"(?:work\s+experience|pengalaman\s+kerja|experience)(.*)", 
-        text, 
-        re.IGNORECASE | re.DOTALL
-    )
     
-    if section_match:
-        following_text = section_match.group(1)
-        # Cari header berikutnya (Education, Skills, Projects, dll.)
-        next_section_match = re.search(
-            r"(?:education|pendidikan|skills|keterampilan|projects|projek|organization|organisasi)", 
-            following_text, 
-            re.IGNORECASE
+    # Buat Prompt (Instruksi) untuk AI
+    prompt = f"""
+    Anda adalah asisten HR AI yang sangat teliti. Tugas Anda adalah mengekstrak informasi dari teks CV berikut.
+    Kembalikan jawaban HANYA dalam format JSON yang valid, TANPA teks tambahan di awal atau akhir.
+    
+    Skema JSON yang WAJIB Anda ikuti:
+    {json.dumps(json_schema, indent=2)}
+    
+    Instruksi Penting:
+    1.  **name**: Ekstrak nama lengkap orang tersebut.
+    2.  **gpa**: Cari IPK (GPA) dan ubah menjadi float (misal: 3.37). Jika tidak ada, kembalikan null.
+    3. **education**": "Tingkat pendidikan DAN jurusan (string, contoh: 'S1 Computer Science', 'D3 Teknik Informatika', null jika tidak ada)",
+    
+    # --- PERUBAHAN DI SINI ---
+    4.  **skills**: Ekstrak SEMUA skill (keahlian teknis atau soft skill) yang Anda temukan di CV. Kembalikan sebagai sebuah list string. Contoh: ["Python", "SQL", "Tableau", "Leadership", "Communication"].
+    # -------------------------
+    
+    5.  **experience**: Ekstrak setiap pengalaman kerja sebagai SATU string per pekerjaan, gabungkan jabatan, perusahaan (jika ada), dan tanggal. Contoh: ["Business Analyst di CV. Nur Cahaya Pratama (May 2023–NOW)", "Data Analyst di UD Bangkit (May 2022–May 2023)"].
+    6.  **total_experience**: Hitung total tahun pengalaman kerja. 
+        Jika kandidat memiliki banyak pekerjaan yang tumpang tindih. Jangan jumlahkan durasi setiap proyek. 
+        Sebaliknya, tentukan tanggal pekerjaan paling awal (contoh: 2005) dan tanggal pekerjaan terakhir (contoh: 2025). 
+        Hitung total rentang karirnya (contoh: 2025 - 2005 = 20). 
+        Kembalikan sebagai SATU ANGKA INTEGER. Gunakan tahun 2025 sebagai tahun "NOW" atau "PRESENT".
+    7.  Jika sebuah field tidak ditemukan, kembalikan null (kecuali untuk 'skills' dan 'experience', kembalikan []). JANGAN tambahkan field di luar skema.
+    
+    Berikut adalah teks CV-nya:
+    ---
+    {cv_text}
+    ---
+    
+    JSON Output:
+    """
+
+    # 4. Panggil API
+    try:
+        print(f"[DEBUG] Memanggil API Gemini untuk parsing...")
+        # (Konfigurasi untuk memastikan output JSON)
+        generation_config = genai.GenerationConfig(
+            response_mime_type="application/json"
         )
+        response = model.generate_content(prompt, generation_config=generation_config)
         
-        if next_section_match:
-            # Ambil teks di antara dua section
-            experience_section_text = following_text[:next_section_match.start()]
-        else:
-            # Jika tidak ada section lain, ambil semua sisa teks
-            experience_section_text = following_text
-    
-    detailed_experiences = []
-    if experience_section_text:
-        lines = experience_section_text.strip().splitlines()
+        # 5. Parse Respon JSON
+        parsed_data = json.loads(response.text)
         
-        # Pola untuk mendeteksi baris yang mengandung rentang tahun atau tanggal
-        date_pattern = r"(\d{4}\s*-\s*(\d{4}|present|sekarang)|\(\d{4}\s*-\s*(\d{4}|present|sekarang)\)|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember)\s*\d{4})"
+        # Pastikan semua key ada untuk menghindari error di backend
+        final_data = json_schema.copy()
+        final_data.update(parsed_data)
         
-        for line in lines:
-            line_stripped = line.strip()
-            # Jika baris tidak kosong DAN mengandung pola tanggal
-            if line_stripped and re.search(date_pattern, line_stripped, re.IGNORECASE):
-                # Bersihkan bullet points (-, *, •)
-                clean_line = re.sub(r"^\s*[\*•-]\s*", "", line_stripped)
-                # Pastikan baris mengandung lebih dari 2 kata (bukan cuma tanggal)
-                if len(clean_line.split()) > 2: 
-                    detailed_experiences.append(clean_line)
+        return final_data
 
-    extracted_data["experience"] = detailed_experiences 
-
-    # Total Experience
-    year_ranges = re.findall(
-        r"(\d{4})\s*-\s*(\d{4}|present|sekarang)", text, re.IGNORECASE
-    )
-    total_years = 0
-    current_year = datetime.datetime.now().year
-
-    for start_year, end_year in year_ranges:
-        try:
-            start = int(start_year)
-            end = (
-                current_year
-                if end_year.lower() in ["present", "sekarang", "now"]
-                else int(end_year)
-            )
-            duration = end - start
-            # Hanya tambahkan durasi yang masuk akal sebagai pengalaman (misalnya 1 hingga 10 tahun)
-            if 0 < duration <= 10:
-                total_years += duration
-        except ValueError:
-            continue
-
-    # Mencari total tahun pengalaman secara eksplisit
-    if total_years == 0:
-        exp_match = re.search(r"(\d+)\s*\+?\s*(tahun|years)\s*pengalaman", text_lower)
-        if exp_match:
-            total_years = int(exp_match.group(1))
-
-    # Memberikan batas atas yang wajar agar hasilnya tidak terlalu tinggi
-    # extracted_data["experience"] = min(total_years, 15)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Gagal mem-parse JSON dari Gemini: {e}")
+        print(f"Response mentah: {response.text}")
+        return json_schema # Kembalikan skema kosong
+    except Exception as e:
+        print(f"ERROR: Terjadi kesalahan saat memanggil API Gemini: {e}")
+        return json_schema # Kembalikan skema kosong
 
 
-    return extracted_data
-
-
+# --- 4. FUNGSI SCORING (TIDAK BERUBAH) ---
 def calculate_match_score(cv_text, job_desc_text):
     """Menghitung skor kecocokan antara teks CV dan deskripsi pekerjaan."""
     if not cv_text or not job_desc_text:
         return 0.0
-    # Stop words tetap menggunakan 'english' karena TfidfVectorizer tidak memiliki stop words bawaan bahasa Indonesia
+    
     documents = [cv_text, job_desc_text]
-    tfidf = TfidfVectorizer(stop_words="english")
-    tfidf_matrix = tfidf.fit_transform(documents)
-    cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
-    score = cosine_sim[0][0]
-    return round(score * 100, 2)
-
+    try:
+        tfidf = TfidfVectorizer(stop_words="english")
+        tfidf_matrix = tfidf.fit_transform(documents)
+        cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+        score = cosine_sim[0][0]
+        return round(score * 100, 2)
+    except ValueError as e:
+        print(f"Error TfidfVectorizer (mungkin CV kosong): {e}")
+        return 0.0
 
 
 
