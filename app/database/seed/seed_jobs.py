@@ -60,4 +60,4 @@ def seed():
 
     # db.session.bulk_save_objects(jobs)
     db.session.commit()
-    print("✅ Jobs seeded successfully!")
+print("✅ Jobs seeded successfully!")

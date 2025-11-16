@@ -343,6 +343,90 @@ def analyze_keywords(cv_text: str, job_desc_text: str) -> Dict[str, Union[List[s
         "missing_keywords": missing_keywords
     }
 
+def fallback_parse_candidate_info(text):
+    """
+    Fallback parsing function ketika BERT NER gagal.
+    Menggunakan regex dan rule-based approach.
+    """
+    print("🔄 Using fallback candidate info parsing...")
+    
+    extracted_data = {
+        "name": None, 
+        "email": None, 
+        "phone": None, 
+        "gpa": None,
+        "experience": 0, 
+        "skills": [], 
+        "education": None,
+        "language": "id"  # Default language
+    }
+
+    # Email extraction
+    email_match = re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)
+    if email_match:
+        extracted_data['email'] = email_match.group(0)
+
+    # Phone extraction
+    phone_match = re.search(r'(\+62|62|0)8[1-9][0-9]{7,10}\b', text)
+    if phone_match:
+        extracted_data['phone'] = phone_match.group(0)
+
+    # Name extraction fallback - cari di baris pertama yang reasonable
+    lines = text.strip().splitlines()
+    for line in lines:
+        line_clean = line.strip()
+        # Skip jika line mengandung email, phone, atau URL
+        if (re.search(r'@|\d{9,}|http', line_clean) or 
+            len(line_clean) < 3 or 
+            len(line_clean) > 100):
+            continue
+            
+        # Jika line terlihat seperti nama (2-4 kata, kapitalisasi proper)
+        words = line_clean.split()
+        if 2 <= len(words) <= 4 and any(word.istitle() for word in words):
+            extracted_data['name'] = line_clean
+            break
+
+    # Education level detection
+    text_lower = text.lower()
+    if any(keyword in text_lower for keyword in ['s2', 'master', 'magister']):
+        extracted_data['education'] = 'S2'
+    elif any(keyword in text_lower for keyword in ['s1', 'bachelor', 'sarjana']):
+        extracted_data['education'] = 'S1'
+    elif any(keyword in text_lower for keyword in ['d3', 'diploma']):
+        extracted_data['education'] = 'D3'
+
+    # GPA extraction
+    gpa_match = None
+    pattern_with_keyword = r'(gpa|ipk)\s*:?\s*([0-4][.,]\d+)'
+    gpa_match = re.search(pattern_with_keyword, text_lower)
+
+    if not gpa_match:
+        pattern_without_keyword = r'([0-4][.,]\d+)\s*\/\s*4[.,]0+'
+        gpa_match = re.search(pattern_without_keyword, text_lower)
+
+    if gpa_match:
+        gpa_string = gpa_match.group(gpa_match.lastindex)
+        gpa_string_standard = gpa_string.replace(',', '.')
+        extracted_data['gpa'] = float(gpa_string_standard)
+
+    # Language detection sederhana
+    english_words = ['the', 'and', 'of', 'to', 'a', 'in', 'is', 'you', 'are', 'for']
+    id_words = ['dan', 'dengan', 'dari', 'untuk', 'pada', 'yang', 'di', 'ke', 'ini', 'itu']
+    
+    english_count = sum(1 for word in english_words if word in text_lower)
+    indonesian_count = sum(1 for word in id_words if word in text_lower)
+    
+    if english_count > indonesian_count:
+        extracted_data['language'] = 'en'
+    elif indonesian_count > english_count:
+        extracted_data['language'] = 'id'
+    else:
+        extracted_data['language'] = 'mixed'
+
+    print(f"✅ Fallback parsing completed - Language: {extracted_data['language']}")
+    return extracted_data
+
 # if __name__ == '__main__':
 #     sample_cv_text = """
 #     Budi Santoso
@@ -385,4 +469,3 @@ def analyze_keywords(cv_text: str, job_desc_text: str) -> Dict[str, Union[List[s
 #     print("--- 4. Menguji Fungsi Analisis Keyword ---")
 #     pprint.pprint(analyze_keywords(sample_cv_text, sample_job_description))
 #     print("\n" + "="*40 + "\n")
-

@@ -37,3 +37,4 @@ def seed():
 
     db.session.commit()
     print(f"✅ Created {created_links} candidate-skill links successfully!")
+

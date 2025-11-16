@@ -1,384 +1,298 @@
 import os
 import json
+import logging
+import re
 from jinja2 import Environment, FileSystemLoader
 from weasyprint import HTML
 from app.models import Candidate
 from flask import current_app
 import google.generativeai as genai
 
-# Configure Gemini
-def configure_gemini():
-    """Configure Gemini API"""
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("⚠️ Gemini API key not found")
-        return False
+# Configure logging
+logger = logging.getLogger(__name__)
+
+class CVGeneratorWithAI:
+    def __init__(self):
+        # AMBIL API KEY DARI ENVIRONMENT VARIABLE
+        self.api_key = os.getenv('GEMINI_API_KEY')
+        self._ai_model = None
     
-    try:
-        genai.configure(api_key=api_key)
-        return True
-    except Exception as e:
-        print(f"⚠️ Gemini configuration failed: {e}")
-        return False
+        print(f"🔍 [DEBUG] API Key from env: {'✅ Found' if self.api_key else '❌ Not found'}")
+        if self.api_key:
+            print(f"🔍 [DEBUG] API Key length: {len(self.api_key)}")
+            print(f"🔍 [DEBUG] API Key preview: {self.api_key[:10]}...{self.api_key[-10:]}")
+        else:
+            logger.warning("⚠️ GEMINI_API_KEY environment variable not found")
 
-def enhance_with_gemini(candidate_data):
-    """
-    Gunakan Google Gemini untuk memperhalus konten CV dengan prompt yang aman
-    """
-    # Check if Gemini is configured
-    if not configure_gemini():
-        print("⚠️ Gemini not configured, skipping enhancement")
-        return candidate_data
-
-    try:
-        # Use the most stable model - Gemini 2.5 Flash
-        model = genai.GenerativeModel('models/gemini-2.5-flash')
-        
-        # Prepare data - sanitize first
-        skills = candidate_data.get("skills") or ", ".join(
-            candidate_data.get("structured_profile_json", {}).get("hard_skills", [])
-        )
-
-        # Sanitize input data
-        summary = str(candidate_data.get('summary', ''))[:500]  # Limit length
-        experience = str(candidate_data.get('experience', ''))[:500]
-        education = str(candidate_data.get('education', ''))[:500]
-
-        # Create SAFE prompt - sangat spesifik dan profesional
-        prompt = f"""
-        TASK: Improve this CV content for professional use.
-
-        ORIGINAL CONTENT:
-        SUMMARY: {summary}
-        EXPERIENCE: {experience}
-        SKILLS: {skills}
-        EDUCATION: {education}
-
-        INSTRUCTIONS:
-        1. Make the summary more professional (2-3 sentences max)
-        2. Improve experience descriptions using action verbs
-        3. Format skills clearly
-        4. Keep education concise
-        5. Use formal Indonesian language
-        6. Focus on achievements and technical skills
-
-        OUTPUT FORMAT (JSON only):
-        {{
-            "summary": "Improved professional summary here",
-            "experience": "Improved experience description here",
-            "skills": "Formatted skills here",
-            "education": "Improved education description here"
-        }}
-
-        Return only the JSON object, no other text.
+    @property
+    def ai_model(self):
+        """Lazy initialization of AI model"""
+        if self._ai_model is None:
+            try:
+                if not self.api_key:
+                    logger.error("❌ No API key available")
+                    return None
+                    
+                genai.configure(api_key=self.api_key)
+                self._ai_model = genai.GenerativeModel('models/gemini-2.5-flash-lite')
+                logger.info("✅ AI model initialized successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize AI model: {e}")
+                self._ai_model = None
+        return self._ai_model
+    
+    def improve_text_with_ai(self, text: str, text_type: str = "general") -> str:
         """
-
-        # Generate content with safety settings
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.3,  # Lower for more consistent results
-                top_p=0.8,
-                top_k=40,
-                max_output_tokens=800,
-            ),
-            safety_settings=[
-                {
-                    "category": "HARM_CATEGORY_HARASSMENT",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    "category": "HARM_CATEGORY_HATE_SPEECH", 
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    "threshold": "BLOCK_MEDIUM_AND_ABOVE"
-                }
-            ]
-        )
-
-        # Check response carefully
-        if not response.parts:
-            print(f"❌ Gemini response blocked. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'Unknown'}")
-            # Try fallback with simpler prompt
-            return enhance_with_gemini_fallback(candidate_data)
-
-        # Process response
-        text = response.text.strip()
-        print(f"🔍 Gemini raw response: {text}")
-
-        # Clean response
-        text = text.replace('```json', '').replace('```', '').strip()
+        Improve CV text using AI with career-focused prompts and clean formatting
+        """
+        if not text or not text.strip() or self.ai_model is None:
+            return text
         
         try:
-            improved = json.loads(text)
-            print("✅ Gemini enhancement successful")
-            
-            # Validate improved data
-            if not improved.get('summary'):
-                improved['summary'] = candidate_data.get('summary', '')
-            if not improved.get('experience'):
-                improved['experience'] = candidate_data.get('experience', '')
-            if not improved.get('skills'):
-                improved['skills'] = skills
-            if not improved.get('education'):
-                improved['education'] = candidate_data.get('education', '')
+            # Skip very short texts
+            if len(text.strip()) < 10:
+                return text
                 
-        except json.JSONDecodeError as e:
-            print(f"❌ Failed to parse JSON: {e}")
-            print(f"Raw response: {text}")
-            # Use fallback extraction
-            improved = extract_key_value_from_text(text)
-        
-        # Update candidate data
-        candidate_data.update(improved)
-        return candidate_data
-
-    except Exception as e:
-        print(f"⚠️ Gemini enhancement error: {e}")
-        # Fallback to rule-based
-        return apply_advanced_rule_based_improvement(candidate_data)
-
-
-def enhance_with_gemini_fallback(candidate_data):
-    """
-    Fallback dengan prompt yang lebih sederhana
-    """
-    try:
-        model = genai.GenerativeModel('models/gemini-2.5-flash')
-        
-        skills = candidate_data.get("skills") or ", ".join(
-            candidate_data.get("structured_profile_json", {}).get("hard_skills", [])
-        )
-
-        # Very simple and safe prompt
-        prompt = f"""Improve this CV text professionally:
-
-"{candidate_data.get('summary', '')}"
-
-Return only the improved version in Indonesian."""
-        
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.2,
-                max_output_tokens=200,
+            # VERY SPECIFIC career-focused prompts with NO FORMATTING instructions
+            prompts = {
+                "summary": """
+                You are a professional career coach. Improve this CV summary to be more professional and impactful.
+                Focus on: clarity, achievements, quantifiable results, and professional tone.
+                Add measurable impact based on typical project scopes (user volume, performance gains, efficiency metrics).
+                Keep it concise (2-3 sentences maximum).
+                IMPORTANT: Return only plain text without any formatting, asterisks, markdown, or special characters.
+                
+                ORIGINAL SUMMARY: {text}
+                """,
+                
+                "job_description": """
+                You are a professional resume writer. Rewrite this job description to be more achievement-oriented with quantifiable metrics.
+                Use strong action verbs and focus on measurable accomplishments.
+                Add realistic metrics based on similar project scopes: user volume (e.g., 10K+ users), performance gains (e.g., 40% faster), 
+                delivery speed (e.g., 25% quicker), efficiency improvements (e.g., 30% more efficient), cost savings, error reduction, etc.
+                Keep it concise and impactful with 2-3 bullet points worth of content.
+                CRITICAL: Return plain text only - no asterisks, no bold, no markdown formatting of any kind.
+                
+                ORIGINAL JOB DESCRIPTION: {text}
+                """,
+                
+                "achievement": """
+                As a professional resume editor, improve this work achievement to be more impactful with quantifiable results.
+                Start with strong action verbs and add realistic metrics based on typical project impact.
+                Include measurable outcomes like: performance improvements (15-50%), user growth (1K-100K), efficiency gains (20-60%), 
+                cost reductions (10-40%), error rate decreases, faster delivery times, etc.
+                Keep it to one clear, metrics-driven sentence.
+                ESSENTIAL: Plain text output only - no formatting symbols, asterisks, or special characters.
+                
+                ORIGINAL ACHIEVEMENT: {text}
+                """,
+                
+                "general": """
+                You are a professional CV editor. Improve this text to be more suitable for a professional curriculum vitae.
+                Add quantifiable impact and measurable results based on realistic project scopes.
+                Make it concise, professional, and impactful with specific metrics.
+                Return only the improved version as plain text without any formatting.
+                
+                ORIGINAL TEXT: {text}
+                """
+            }
+            
+            prompt_template = prompts.get(text_type, prompts["general"])
+            prompt = prompt_template.format(text=text)
+            
+            # More permissive safety settings for career content
+            response = self.ai_model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.2,  # Lower for more consistent results
+                    max_output_tokens=500,
+                    top_p=0.9,
+                ),
+                safety_settings=[
+                    {
+                        "category": "HARM_CATEGORY_HARASSMENT",
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_HATE_SPEECH", 
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    },
+                    {
+                        "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                        "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+                    }
+                ]
             )
-        )
-
-        if response.parts:
-            improved_summary = response.text.strip()
-            candidate_data["summary"] = improved_summary
-            print("✅ Gemini fallback enhancement successful")
-        
-        return candidate_data
-        
-    except Exception as e:
-        print(f"⚠️ Gemini fallback also failed: {e}")
-        return apply_advanced_rule_based_improvement(candidate_data)
-    
-def apply_advanced_rule_based_improvement(candidate_data):
-    """
-    Advanced rule-based improvement untuk CV yang profesional
-    """
-    skills = candidate_data.get("skills") or ", ".join(
-        candidate_data.get("structured_profile_json", {}).get("hard_skills", [])
-    )
-    
-    # Professional templates untuk summary
-    professional_templates = [
-        "Mahasiswa Teknik Informatika yang berdedikasi dengan keahlian dalam {skills}. Berpengalaman dalam pengembangan software dan solusi teknologi inovatif.",
-        "Calon lulusan Teknik Informatika dengan passion dalam {skills}. Memiliki kemampuan analitis yang kuat dan berpengalaman dalam project development.",
-        "Professional dengan latar belakang Teknik Informatika dan pengalaman dalam {skills}. Berkomitmen untuk memberikan solusi teknologi yang efektif dan efisien."
-    ]
-    
-    # Improve summary dengan template profesional
-    original_summary = candidate_data.get('summary', '')
-    
-    # Clean up informal language
-    informal_words = {
-        'gacor': 'mahir',
-        'ganteng': 'profesional', 
-        'jago': 'ahli',
-        'mantap': 'handal',
-        'keren': 'impresif',
-        'suka': 'memiliki minat dalam',
-        'bisa': 'mampu',
-        'ngoding': 'pemrograman',
-        'coding': 'pemrograman',
-        'tekun belajar': 'berdedikasi dalam pembelajaran',
-        'mahir dalam berbagai hal berbau pemrograman': 'memiliki keahlian komprehensif dalam pemrograman',
-        'mahir dalam mengelola': 'berpengalaman dalam pengembangan'
-    }
-    
-    cleaned_summary = original_summary
-    for informal, formal in informal_words.items():
-        cleaned_summary = cleaned_summary.replace(informal, formal)
-    
-    # Create professional summary
-    if cleaned_summary and len(cleaned_summary.strip()) > 20:  # Jika summary cukup panjang
-        improved_summary = cleaned_summary
-    else:
-        # Gunakan template profesional
-        import random
-        template = random.choice(professional_templates)
-        improved_summary = template.format(skills=skills)
-    
-    # Improve work experience descriptions
-    work_experience = candidate_data.get('work_experience', [])
-    improved_experience = []
-    
-    professional_verbs = [
-        "Mengembangkan", "Mengelola", "Mengimplementasikan", "Merancang", 
-        "Mengoptimalkan", "Menganalisis", "Memimpin", "Berkolaborasi"
-    ]
-    
-    for exp in work_experience:
-        if isinstance(exp, dict):
-            description = exp.get('description', '')
-            job_title = exp.get('job_title', '')
             
-            # Clean informal language
-            for informal, formal in informal_words.items():
-                description = description.replace(informal, formal)
-            
-            # Improve description structure
-            if description and len(description.strip()) > 0:
-                # Jika deskripsi masih informal, buat yang lebih profesional
-                if any(word in description.lower() for word in ['mahir', 'bisa', 'dapat']):
-                    # Buat deskripsi profesional berdasarkan job title
-                    if 'software' in job_title.lower() or 'engineer' in job_title.lower():
-                        description = "• Mengembangkan dan memelihara aplikasi software menggunakan teknologi modern\n• Berkolaborasi dengan tim untuk merancang dan mengimplementasikan solusi teknis\n• Melakukan testing dan debugging untuk memastikan kualitas kode"
-                    elif 'developer' in job_title.lower():
-                        description = "• Mengembangkan aplikasi web dan mobile yang responsif\n• Mengimplementasikan fitur-fitur baru berdasarkan kebutuhan user\n• Mengoptimalkan performa dan keamanan aplikasi"
-                    else:
-                        description = "• Berkontribusi dalam pengembangan project teknologi\n• Berkolaborasi dengan tim cross-functional\n• Menerapkan best practices dalam pengembangan software"
+            # BETTER response handling
+            if response.parts:
+                improved_text = response.text.strip()
                 
-                # Pastikan format bullet points
-                if not any(marker in description for marker in ['•', '-', '*']):
-                    lines = [line.strip() for line in description.split('.') if line.strip()]
-                    description = '\n'.join([f"• {line}" for line in lines if line])
-            
-            improved_exp = exp.copy()
-            improved_exp['description'] = description
-            improved_experience.append(improved_exp)
-        else:
-            improved_experience.append(exp)
-    
-    # Improve skills formatting
-    if skills and isinstance(skills, str):
-        # Capitalize dan format skills
-        skills_list = [skill.strip() for skill in skills.split(',')]
-        improved_skills = ', '.join([skill.strip().title() for skill in skills_list])
-        
-        # Group similar skills
-        tech_skills = []
-        soft_skills = []
-        
-        for skill in skills_list:
-            skill_lower = skill.lower()
-            if any(tech in skill_lower for tech in ['python', 'javascript', 'java', 'react', 'flask', 'node', 'html', 'css', 'git', 'sql', 'database']):
-                tech_skills.append(skill.strip().title())
+                # COMPREHENSIVE CLEANING OF MARKDOWN AND FORMATTING
+                improved_text = self._clean_all_formatting(improved_text)
+                
+                if improved_text and len(improved_text) > len(text) / 2:  # Reasonable length check
+                    logger.info(f"✅ AI improved {text_type}")
+                    return improved_text
+                else:
+                    logger.warning(f"⚠️ AI returned short/empty response for {text_type}")
+                    return text
             else:
-                soft_skills.append(skill.strip().title())
-        
-        # Jika ada soft skills, format secara terpisah
-        if soft_skills:
-            improved_skills = f"{', '.join(tech_skills)} | {', '.join(soft_skills)}"
-        else:
-            improved_skills = ', '.join(tech_skills)
-    else:
-        improved_skills = skills
-    
-    # Improve education description
-    education = candidate_data.get('education', [])
-    improved_education = []
-    
-    for edu in education:
-        if isinstance(edu, dict):
-            improved_edu = edu.copy()
-            improved_education.append(improved_edu)
-        else:
-            improved_education.append(edu)
-    
-    improved_data = {
-        "summary": improved_summary,
-        "work_experience": improved_experience,
-        "skills": improved_skills,
-        "education": improved_education
-    }
-    
-    print("✅ Applied professional rule-based enhancement")
-    
-    # Update candidate data
-    candidate_data.update(improved_data)
-    return candidate_data
-    
-def extract_key_value_from_text(text):
-    """
-    Fallback method to extract key-value pairs from text response
-    """
-    improved = {
-        "summary": "",
-        "experience": "",
-        "skills": "", 
-        "education": ""
-    }
-    
-    lines = text.split('\n')
-    current_key = None
-    
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-            
-        # Check for key patterns
-        if '"summary":' in line or 'summary:' in line:
-            current_key = 'summary'
-            value = line.split(':', 1)[1].strip().strip('",')
-            improved['summary'] = value
-        elif '"experience":' in line or 'experience:' in line:
-            current_key = 'experience' 
-            value = line.split(':', 1)[1].strip().strip('",')
-            improved['experience'] = value
-        elif '"skills":' in line or 'skills:' in line:
-            current_key = 'skills'
-            value = line.split(':', 1)[1].strip().strip('",')
-            improved['skills'] = value
-        elif '"education":' in line or 'education:' in line:
-            current_key = 'education'
-            value = line.split(':', 1)[1].strip().strip('",')
-            improved['education'] = value
-        elif current_key and line.startswith('"') and line.endswith('"'):
-            # Continue multi-line values
-            improved[current_key] += " " + line.strip('",')
-    
-    return improved
+                # Detailed error analysis
+                if response.candidates:
+                    finish_reason = response.candidates[0].finish_reason
+                    logger.warning(f"⚠️ AI response blocked. Finish reason: {finish_reason}")
+                    
+                    # Try fallback with simpler prompt
+                    return self._improve_text_fallback(text, text_type)
+                else:
+                    logger.warning("⚠️ No candidates in response")
+                    return text
+                
+        except Exception as e:
+            logger.error(f"❌ AI phrasing failed: {e}")
+            return self._improve_text_fallback(text, text_type)
 
-def enhance_cv_content(candidate_data):
-    """
-    Main enhancement function with fallback
-    """
-    # Try Gemini first
-    enhanced_data = enhance_with_gemini(candidate_data.copy())
+    def _clean_all_formatting(self, text: str) -> str:
+        """
+        Remove all markdown and formatting from AI response
+        """
+        if not text:
+            return text
+        
+        # Remove markdown bold and italic
+        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+        text = re.sub(r'\*(.*?)\*', r'\1', text)
+        
+        # Remove any remaining asterisks (standalone)
+        text = re.sub(r'(?<!\w)\*(?!\w)', '', text)
+        
+        # Remove markdown headers
+        text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+        
+        # Remove code formatting
+        text = re.sub(r'`(.*?)`', r'\1', text)
+        
+        # Remove links but keep text
+        text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
+        
+        # Remove quote marks around the entire text
+        text = re.sub(r'^["\']|["\']$', '', text)
+        
+        # Clean up extra whitespace
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+        
+        return text
+
+    def _improve_text_fallback(self, text: str, text_type: str) -> str:
+        """
+        Fallback method with simpler, safer prompts and no formatting
+        """
+        try:
+            # Very simple and safe prompts with explicit no-formatting
+            simple_prompts = {
+                "summary": "Improve this professional summary using plain text only (no formatting): {text}",
+                "job_description": "Improve this job description using plain text only (no asterisks, no formatting): {text}",
+                "achievement": "Improve this achievement using plain text only: {text}",
+                "general": "Improve this CV text using plain text only: {text}"
+            }
+            
+            prompt = simple_prompts.get(text_type, simple_prompts["general"]).format(text=text)
+            
+            response = self.ai_model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.1,
+                    max_output_tokens=300,
+                )
+            )
+            
+            if response.parts:
+                cleaned_text = self._clean_all_formatting(response.text.strip())
+                return cleaned_text
+            else:
+                return text
+                
+        except Exception as e:
+            logger.error(f"❌ Fallback also failed: {e}")
+            return text
     
-    # Check if enhancement actually happened
-    original_summary = candidate_data.get('summary', '')
-    enhanced_summary = enhanced_data.get('summary', '')
+    def improve_bullet_points(self, points: list) -> list:
+        """Improve a list of bullet points"""
+        if not points or self.ai_model is None:
+            return points
+        
+        improved_points = []
+        for point in points:
+            if point and point.strip():
+                improved_point = self.improve_text_with_ai(point.strip(), "achievement")
+                improved_points.append(improved_point)
+            else:
+                improved_points.append(point)
+        return improved_points
     
-    if enhanced_summary and enhanced_summary != original_summary:
-        print("✅ AI enhancement applied successfully")
-        return enhanced_data
-    else:
-        print("⚠️ AI enhancement failed, using original data")
-        return candidate_data
+    def apply_ai_phrasing(self, cv_data: dict) -> dict:
+        """
+        Apply AI phrasing with retry logic
+        """
+        if self.ai_model is None:
+            logger.warning("⚠️ AI model not available")
+            return cv_data
+        
+        improved_data = cv_data.copy()
+        
+        print("🔄 Applying AI phrasing with retry logic...")
+        
+        # Track improvements
+        improvements_applied = 0
+        
+        # Improve summary with retry
+        if improved_data.get('summary'):
+            if isinstance(improved_data['summary'], str) and len(improved_data['summary'].strip()) > 15:
+                original = improved_data['summary']
+                improved = self._improve_with_retry(original, "summary")
+                if improved != original:
+                    improved_data['summary'] = improved
+                    improvements_applied += 1
+                    print(f"✅ Improved summary")
+        
+        # Improve work experiences (limit to 2)
+        if improved_data.get('work_experience'):
+            for i, exp in enumerate(improved_data['work_experience'][:2]):  # Limit to first 2
+                if exp.get('description') and isinstance(exp['description'], str):
+                    original = exp['description']
+                    if len(original.strip()) > 20:
+                        improved = self._improve_with_retry(original, "job_description")
+                        if improved != original:
+                            exp['description'] = improved
+                            improvements_applied += 1
+                            print(f"✅ Improved experience {i+1}")
+        
+        print(f"🎯 AI phrasing completed: {improvements_applied} improvements")
+        return improved_data
+
+    def _improve_with_retry(self, text: str, text_type: str, max_retries: int = 2) -> str:
+        """
+        Retry mechanism for AI improvements
+        """
+        for attempt in range(max_retries):
+            try:
+                improved = self.improve_text_with_ai(text, text_type)
+                if improved != text and len(improved) > 10:
+                    return improved
+            except Exception as e:
+                logger.warning(f"⚠️ Attempt {attempt + 1} failed: {e}")
+        
+        return text  # Return original if all retries fail
     
+# Global instance
+ai_cv_generator = CVGeneratorWithAI()
+
 def build_cv(candidate_id):
     """
     Generate CV PDF berdasarkan data kandidat di database
@@ -389,9 +303,6 @@ def build_cv(candidate_id):
 
     candidate_data = candidate.__dict__.copy()
     candidate_data.pop("_sa_instance_state", None)
-
-    # apa ini tlg dicek lg ya
-    # candidate_data = enhance_with_ai(candidate_data)
 
     template_dir = os.path.join(current_app.root_path, "template")
     env = Environment(loader=FileSystemLoader(template_dir))
@@ -409,8 +320,7 @@ def build_cv(candidate_id):
     print(f"✅ CV successfully generated: {output_path}")
     return output_path
 
-
-def build_cv_from_data(data, template="modern"):
+def build_cv_from_data(data, template="modern", use_ai_phrasing=True):
     """
     Generate CV directly from user form data (no DB).
     """
@@ -419,30 +329,25 @@ def build_cv_from_data(data, template="modern"):
         print(json.dumps(data, indent=2, default=str))
         print("🔍 [DEBUG] =======================================")
 
-        # Extract data - FIXED: use work_experience instead of experience
+        # Extract data
         name = data.get("extracted_name") or data.get("name") or ""
         email = data.get("email", "")
         phone = data.get("phone", "")
         summary = data.get("summary", "")
-        experience_raw = data.get("work_experience") or data.get("experience") or []  # FIXED
+        experience_raw = data.get("work_experience") or data.get("experience") or []
         education_raw = data.get("education") or []
         skills_raw = data.get("skills", "")
         linkedin = data.get("linkedin_url", "") or data.get("linkedin", "")
         portfolio = data.get("portfolio_url", "")
 
         print(f"🔍 [DEBUG] work_experience data: {experience_raw}")
-        print(f"🔍 [DEBUG] Type: {type(experience_raw)}")
         
-        # Normalize work experience - FIXED VERSION
+        # Normalize work experience
         work_experience = []
         if isinstance(experience_raw, list) and experience_raw:
             for i, exp in enumerate(experience_raw):
                 print(f"🔍 [DEBUG] --- Processing Work Experience {i} ---")
-                print(f"🔍 [DEBUG] Raw exp: {exp}")
                 if isinstance(exp, dict):
-                    print(f"🔍 [DEBUG] job_title: '{exp.get('job_title')}'")
-                    print(f"🔍 [DEBUG] company_name: '{exp.get('company_name')}'")
-                    
                     # Handle description
                     description = exp.get("description") or ""
                     if isinstance(description, str) and description.strip():
@@ -451,21 +356,14 @@ def build_cv_from_data(data, template="modern"):
                     else:
                         description_final = description
                     
-                    # Get job title and company name
-                    job_title = (exp.get("job_title") or "").strip()
-                    company_name = (exp.get("company_name") or "").strip()
-                    
                     cleaned_exp = {
-                        "job_title": job_title,
-                        "company_name": company_name,
+                        "job_title": (exp.get("job_title") or "").strip(),
+                        "company_name": (exp.get("company_name") or "").strip(),
                         "start_date": (exp.get("start_date") or "").strip(),
                         "end_date": (exp.get("end_date") or "").strip(),
                         "description": description_final
                     }
                     
-                    print(f"✅ [DEBUG] Cleaned experience: {cleaned_exp}")
-                    
-                    # Always add if we have the data
                     work_experience.append(cleaned_exp)
         
         print(f"✅ [DEBUG] Final work_experience: {work_experience}")
@@ -473,9 +371,7 @@ def build_cv_from_data(data, template="modern"):
         # Normalize education
         education_list = []
         if isinstance(education_raw, list) and education_raw:
-            for i, edu in enumerate(education_raw):
-                print(f"🔍 [DEBUG] --- Processing Education {i} ---")
-                print(f"🔍 [DEBUG] Raw edu: {edu}")
+            for edu in education_raw:
                 if isinstance(edu, dict):
                     cleaned_edu = {
                         "degree": (edu.get("degree") or "").strip(),
@@ -483,8 +379,6 @@ def build_cv_from_data(data, template="modern"):
                         "graduation_year": (edu.get("graduation_year") or "").strip(),
                         "major": (edu.get("major") or "").strip()
                     }
-                    
-                    print(f"✅ [DEBUG] Cleaned education: {cleaned_edu}")
                     education_list.append(cleaned_edu)
 
         print(f"✅ [DEBUG] Final education_list: {education_list}")
@@ -497,7 +391,7 @@ def build_cv_from_data(data, template="modern"):
             hard_skills_list = [s.strip() for s in (str(skills_raw) or "").split(",") if s.strip()]
             skills_string = ", ".join(hard_skills_list)
 
-        # Build candidate data structure - FIXED STRUCTURE
+        # Build candidate data structure
         candidate_data = {
             "personal_info": {
                 "full_name": name,
@@ -507,7 +401,7 @@ def build_cv_from_data(data, template="modern"):
                 "portfolio_url": portfolio,
             },
             "summary": summary,
-            "work_experience": work_experience,  # Use the correct key
+            "work_experience": work_experience,
             "education": education_list,
             "skills": {
                 "hard_skills": hard_skills_list,
@@ -515,30 +409,26 @@ def build_cv_from_data(data, template="modern"):
             },
         }
 
-        # Add flat keys for template compatibility - FIXED
+        # Add flat keys for template compatibility
         candidate_data.update({
             "extracted_name": name,
             "extracted_email": email,
             "extracted_phone": phone,
-            "experience": work_experience,  # Keep for backward compatibility
+            "experience": work_experience,
             "education_text": education_list,
             "skills": skills_string,
             "structured_profile_json": {"hard_skills": hard_skills_list},
         })
 
-        print(f"✅ [DEBUG] ========== FINAL CANDIDATE DATA ==========")
         print(f"✅ [DEBUG] Name: {candidate_data.get('extracted_name')}")
         print(f"✅ [DEBUG] Work Experience items: {len(candidate_data.get('work_experience', []))}")
-        for i, exp in enumerate(candidate_data.get('work_experience', [])):
-            print(f"✅ [DEBUG]   Item {i}:")
-            print(f"✅ [DEBUG]     job_title: '{exp.get('job_title')}'")
-            print(f"✅ [DEBUG]     company_name: '{exp.get('company_name')}'")
-            print(f"✅ [DEBUG]     start_date: '{exp.get('start_date')}'")
-            print(f"✅ [DEBUG]     end_date: '{exp.get('end_date')}'")
-        print(f"✅ [DEBUG] =========================================")
 
-        print("🔄 Attempting AI enhancement with Gemini...")
-        candidate_data = enhance_cv_content(candidate_data)
+        # Apply AI phrasing if enabled
+        if use_ai_phrasing:
+            print("🔄 Applying AI phrasing improvements...")
+            candidate_data = ai_cv_generator.apply_ai_phrasing(candidate_data)
+        else:
+            print("ℹ️ AI phrasing disabled, using original content")
 
         # Render template
         template_dir = os.path.join(current_app.root_path, "templates")
@@ -571,17 +461,3 @@ def build_cv_from_data(data, template="modern"):
         import traceback
         traceback.print_exc()
         raise e
-    
-def safe_enhance_with_gemini(candidate_data):
-    """
-    Safe wrapper with comprehensive error handling
-    """
-    max_retries = 2
-    for attempt in range(max_retries):
-        try:
-            return enhance_with_gemini(candidate_data)
-        except Exception as e:
-            print(f"⚠️ Gemini attempt {attempt + 1} failed: {e}")
-            if attempt == max_retries - 1:
-                print("❌ All Gemini attempts failed")
-                return candidate_data

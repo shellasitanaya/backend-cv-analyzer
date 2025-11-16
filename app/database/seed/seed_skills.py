@@ -77,8 +77,6 @@ def seed():
         "Decision Making", "Emotional Intelligence",
 
     ]
-
-
     count = 0
     for skill_name in skills:
         existing = Skill.query.filter_by(skill_name=skill_name).first()
@@ -91,3 +89,4 @@ def seed():
 
     db.session.commit()
     print(f"✅ Seeded {count} new skills successfully!")
+
