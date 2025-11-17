@@ -27,7 +27,7 @@ except Exception as e:
     print(f"ERROR: Gagal mengkonfigurasi Gemini: {e}")
 
 
-# --- 2. DAFTAR SKILL (Tidak kita pakai di prompt, tapi tetap di-load) ---
+# --- 2. DAFTAR SKILL  ---
 BUSINESS_ANALYST_SKILLS = [
     "Business Process Modeling", "Requirement Gathering", "SAP", "ERP", "SQL", 
     "Finance", "Communication", "Analytical Thinking", "Negotiation", 
@@ -40,7 +40,7 @@ DATA_ENGINEER_SKILLS = [
 ]
 
 
-# --- 3. FUNGSI PARSING UTAMA (Sekarang menggunakan AI) ---
+# --- 3. FUNGSI PARSING UTAMA (PAKE AI) ---
 
 def parse_candidate_info(cv_text, required_skills=[]):
     """

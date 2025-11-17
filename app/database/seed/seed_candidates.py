@@ -27,6 +27,7 @@ def seed():
             experience=json.dumps(["Backend Developer at ABC Corp (2023-2024)"]),
             total_experience=1,
             status="passed_filter",
+            scoring_reason="[Seeded Data] Cocok karena pengalaman di ABC Corp.", # <-- TAMBAHKAN
             uploaded_at=datetime.utcnow()
         ),
         Candidate(
@@ -43,6 +44,7 @@ def seed():
             experience=json.dumps(["Real Estate Agent (2021-2023)"]),
             total_experience=2,
             status="processing",
+            scoring_reason="[Seeded Data]", # <-- TAMBAHKAN
             uploaded_at=datetime.utcnow()
         ),
         Candidate(
@@ -59,6 +61,7 @@ def seed():
             experience=json.dumps(["Full Time Monopoly Player (Dari Lahir)"]),
             total_experience=0,
             status="processing",
+            scoring_reason="[Seeded Data]", # <-- TAMBAHKAN
             uploaded_at=datetime.utcnow()
         ),
         Candidate(
@@ -75,6 +78,7 @@ def seed():
             experience=json.dumps(["Software Engineer at TechWorks (2022-2024)"]),
             total_experience=2,
             status="passed_filter",
+            scoring_reason="[Seeded Data] Pengalaman sebagai Software Engineer.", # <-- TAMBAHKAN
             uploaded_at=datetime.utcnow()
         ),
         Candidate(
@@ -91,6 +95,7 @@ def seed():
             experience=json.dumps(["Junior Java Developer at FintechID (2022-2023)"]),
             total_experience=1,
             status="processing",
+            scoring_reason="[Seeded Data]", # <-- TAMBAHKAN
             uploaded_at=datetime.utcnow()
         ),
     ]

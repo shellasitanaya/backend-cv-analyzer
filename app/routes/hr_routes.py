@@ -191,9 +191,10 @@ def upload_and_process_cvs(job_id):
                 "phone": structured_profile.get("phone"),
                 "gpa": structured_profile.get("gpa"),
                 "education": structured_profile.get("education"),
-                "experience": structured_profile.get("experience"),  # List detail
-                "total_experience": structured_profile.get("total_experience"),  # Angka
-                "skills": structured_profile.get("skills"),  # <-- INI YANG HILANG
+                "experience": structured_profile.get("experience"),  
+                "total_experience": structured_profile.get("total_experience"),  
+                "skills": structured_profile.get("skills"),  
+                "scoring_reason": None
             }
 
             if rejection_reason:
@@ -219,20 +220,13 @@ def upload_and_process_cvs(job_id):
                 # Panggil fungsi scoring AI yang baru
                 ai_result = get_ai_match_score(cv_text, job_description) 
                 
-                # ⬇️ ⬇️ TAMBAHKAN DEBUG PRINT DI SINI ⬇️ ⬇️
                 print(f"--- [DEBUG] Alasan Scoring AI untuk {filename} ---")
                 pprint.pprint(ai_result)
                 print("--------------------------------------------------")
-                # ⬆️ ⬆️ AKHIR DARI DEBUG PRINT ⬆️ ⬆️
                 
-                
-
                 candidate_data['status'] = 'passed_filter'
                 candidate_data['score'] = ai_result.get('match_score', 0)
-                
-                # (OPSIONAL TAPI DISARANKAN) 
-                # Simpan alasan AI ke database jika Anda punya kolomnya
-                # candidate_data['ai_reasoning'] = ai_result.get('reasoning')
+                candidate_data["scoring_reason"] = ai_result.get("reasoning")
 
                 databases.save_candidate(job_id, candidate_data)  # Kirim data lengkap
 

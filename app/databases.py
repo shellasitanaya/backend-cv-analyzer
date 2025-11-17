@@ -103,9 +103,10 @@ def candidate_to_dict(c: Candidate):
         "rejection_reason": c.rejection_reason,
         "gpa": float(c.gpa) if c.gpa is not None else None,
         "education": c.education,
-        "skills": skills_list, # Hasil dari Perbaikan 1
-        "experience": experience_list, # Hasil dari Perbaikan 2
-        "total_experience": c.total_experience 
+        "skills": skills_list,
+        "experience": experience_list,
+        "total_experience": c.total_experience,
+        "scoring_reason": c.scoring_reason
     }
     
 #  SKILLS
@@ -160,8 +161,7 @@ def save_candidate(job_id, data):
         education=data.get('education'),
         gpa=data.get('gpa'),
         total_experience=data.get('total_experience'),
-        
-        # PERBAIKAN: Simpan string JSON ke kolom db.Text
+        scoring_reason=data.get('scoring_reason'),
         experience=experience_json_string 
     )
     

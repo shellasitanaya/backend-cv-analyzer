@@ -22,6 +22,7 @@ class Candidate(db.Model):
 
     status = db.Column(db.Enum("processing", "passed_filter", "rejected", name="candidate_status"), default="processing")
     rejection_reason = db.Column(db.String(255))
+    scoring_reason = db.Column(db.Text, nullable=True)
 
     job = db.relationship("Job", back_populates="candidates")
 
