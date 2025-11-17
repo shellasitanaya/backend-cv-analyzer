@@ -16,6 +16,9 @@ class AstraScoringService:
                     "sistem informasi", "information systems", "teknik komputer", "computer engineering",
                     "teknologi informasi", "information technology", "software engineering", 
                     "rekayasa perangkat lunak",
+                    # Jurusan sib
+                    "business information system", "business information systems",
+                    "sistem informasi bisnis", "information system business",
                     # Jurusan data science dan analytics
                     "data science", "ilmu data", "data analytics", "analisis data", 
                     "business intelligence", "data mining", "penambangan data", "big data",
@@ -25,6 +28,7 @@ class AstraScoringService:
                     "teknik industri", "industrial engineering", "bisnis", "business",
                     "manajemen", "management", "manajemen informatika", "management information systems",
                     "sistem informasi manajemen", "management information systems"
+                    
                 ],
                 "strata": ["s1", "bachelor", "sarjana"],
                 "min_ipk": 3.00
@@ -94,8 +98,36 @@ class AstraScoringService:
         
         try:
             parsed_info = parse_candidate_info(cv_text)
+            parsed_info['cv_full_text'] = cv_text
+
+            parsed_info['gpa'] = float(parsed_info.get('gpa') or 0.0)
+            parsed_info['experience'] = int(parsed_info.get('experience') or 0)
+
             print(f"✅ [ASTRA SCORING] Parsing berhasil - Language: {parsed_info.get('language', 'unknown')}")
             print(f"✅ [ASTRA SCORING] Major detected: {parsed_info.get('major', 'Not found')}")
+
+            if parsed_info.get('gpa') is None:
+                parsed_info['gpa'] = 0.0
+                print("⚠️ [ASTRA SCORING] GPA is None, set to 0.0")
+            
+            if parsed_info.get('experience') is None:
+                parsed_info['experience'] = 0
+                print("⚠️ [ASTRA SCORING] Experience is None, set to 0")
+            
+            # ✅ CONVERT TO PROPER TYPES
+            try:
+                parsed_info['gpa'] = float(parsed_info['gpa'])
+            except (ValueError, TypeError):
+                parsed_info['gpa'] = 0.0
+                print("⚠️ [ASTRA SCORING] Cannot convert GPA to float, using 0.0")
+            
+            try:
+                parsed_info['experience'] = int(parsed_info['experience'])
+            except (ValueError, TypeError):
+                parsed_info['experience'] = 0
+                print("⚠️ [ASTRA SCORING] Cannot convert experience to int, using 0")
+            
+            print(f"📊 [ASTRA SCORING] Sanitized - GPA: {parsed_info['gpa']}, Experience: {parsed_info['experience']}")
         except Exception as e:
             print(f"❌ [ASTRA SCORING] Parsing gagal: {e}")
             return {
@@ -106,7 +138,7 @@ class AstraScoringService:
             }
         
         # 1. Check requirements wajib dengan matching jurusan yang lebih fleksibel
-        wajib_result = AstraScoringService._check_wajib_requirements(parsed_info, requirements["wajib"])
+        wajib_result = AstraScoringService._check_wajib_requirements(parsed_info, requirements["wajib"], cv_text)
         
         if not wajib_result["lulus"]:
             print(f"❌ [ASTRA SCORING] Gagal requirements wajib: {wajib_result['alasan']}")
@@ -155,53 +187,114 @@ class AstraScoringService:
         }
 
     @staticmethod
-    def _check_wajib_requirements(parsed_info: Dict, wajib: Dict) -> Dict:
+    @staticmethod
+    def _check_wajib_requirements(parsed_info: Dict, wajib: Dict, cv_full_text: str = "") -> Dict:
         """
         Check requirements wajib dengan jurusan yang lebih fleksibel
         """
         alasan = []
         details = {}
         
+        # ✅ FIX: Get cv_full_text from parameter or parsed_info
+        if not cv_full_text:
+            cv_full_text = parsed_info.get("cv_full_text", "")
+        
+        cv_full_text_lower = cv_full_text.lower()
+
         # Check jurusan dengan fuzzy matching yang lebih baik
         pendidikan = parsed_info.get("education", "").lower() if parsed_info.get("education") else ""
         jurusan_text = parsed_info.get("structured_profile_json", {}).get("education", "").lower()
         major_detected = parsed_info.get("major", "").lower()
         
-        all_education_text = f"{pendidikan} {jurusan_text} {major_detected}".lower()
+        # ✅ Combine all text for matching
+        all_education_text = f"{pendidikan} {jurusan_text} {major_detected} {cv_full_text_lower}".lower()
+        
+        print(f"🔍 [JURUSAN CHECK] Education text length: {len(all_education_text)} chars")
+        print(f"🔍 [JURUSAN CHECK] Text sample: {all_education_text[:500]}...")
         
         # Fuzzy matching untuk jurusan
         jurusan_ok = False
+        best_match_score = 0
+        best_match_name = None
+        
         for jurusan in wajib["jurusan"]:
-            # Cek apakah jurusan ada di text (fuzzy matching)
-            jurusan_words = jurusan.split()
-            match_count = sum(1 for word in jurusan_words if word in all_education_text)
-            if match_count >= len(jurusan_words) * 0.6:  # 60% match cukup
+            # ✅ METHOD 1: Exact phrase match (best)
+            if jurusan in all_education_text:
                 jurusan_ok = True
                 details["jurusan_matched"] = jurusan
+                details["match_method"] = "exact"
+                print(f"  ✅ EXACT MATCH: '{jurusan}'")
+                break
+            
+            # ✅ METHOD 2: Fuzzy word matching
+            jurusan_words = [w for w in jurusan.split() if len(w) > 2]  # Skip short words
+            if not jurusan_words:  # If all words too short, use original
+                jurusan_words = jurusan.split()
+            
+            match_count = sum(1 for word in jurusan_words if word in all_education_text)
+            match_score = match_count / len(jurusan_words) if jurusan_words else 0
+            
+            # Track best match
+            if match_score > best_match_score:
+                best_match_score = match_score
+                best_match_name = jurusan
+            
+            # ✅ LOWER THRESHOLD: 40% match
+            if match_score >= 0.4:
+                jurusan_ok = True
+                details["jurusan_matched"] = jurusan
+                details["match_method"] = "fuzzy"
+                details["match_score"] = match_score
+                print(f"  ✅ FUZZY MATCH: '{jurusan}' ({match_count}/{len(jurusan_words)} words = {match_score:.2%})")
                 break
         
         details["jurusan"] = jurusan_ok
-        if not jurusan_ok:
-            alasan.append(f"Jurusan tidak sesuai. Dibutuhkan jurusan terkait komputer, IT, data science, atau bisnis.")
+        details["best_match"] = best_match_name
+        details["best_match_score"] = best_match_score
         
-        # Check strata dengan bilingual matching
+        if not jurusan_ok:
+            alasan.append(
+                f"Jurusan tidak sesuai. Dibutuhkan jurusan terkait komputer, IT, data science, atau bisnis. "
+                f"(Best match: {best_match_name} - {best_match_score:.1%})"
+            )
+            print(f"  ❌ NO MATCH. Best was '{best_match_name}' at {best_match_score:.2%}")
+        
+        # Check strata
         strata_ok = any(strata in all_education_text for strata in wajib["strata"])
         details["strata"] = strata_ok
         if not strata_ok:
             alasan.append(f"Strata pendidikan harus {wajib['strata'][0].upper()} atau setara")
         
         # Check IPK
-        ipk = parsed_info.get("gpa", 0)
+        ipk = parsed_info.get("gpa", 0.0)
+        if ipk is None:
+            ipk = 0.0
+        try:
+            ipk = float(ipk)
+        except (ValueError, TypeError):
+            ipk = 0.0
+        
         ipk_ok = ipk >= wajib["min_ipk"]
         details["ipk"] = ipk_ok
+        details["ipk_value"] = ipk
+        
         if not ipk_ok:
             alasan.append(f"IPK minimal {wajib['min_ipk']} (IPK saat ini: {ipk})")
         
-        # Check pengalaman (jika ada requirement)
+        # Check pengalaman
         if "min_pengalaman" in wajib:
             pengalaman = parsed_info.get("experience", 0)
+            if pengalaman is None:
+                pengalaman = 0
+            try:
+                pengalaman = int(pengalaman)
+            except (ValueError, TypeError):
+                pengalaman = 0
+            
             pengalaman_ok = pengalaman >= wajib["min_pengalaman"]
             details["pengalaman"] = pengalaman_ok
+            details["pengalaman_value"] = pengalaman
+
             if not pengalaman_ok:
                 alasan.append(f"Pengalaman minimal {wajib['min_pengalaman']} tahun (pengalaman saat ini: {pengalaman})")
         

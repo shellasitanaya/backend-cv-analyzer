@@ -28,12 +28,15 @@ def get_astra_jobs():
             "message": f"Gagal mengambil data lowongan: {str(e)}"
         }), 500
 
-@astra_bp.route('/analyze/<job_type>', methods=['POST'])
+@astra_bp.route('/analyze/<job_type>', methods=['POST', 'OPTIONS'])
 def analyze_cv_for_astra_job(job_type):
     """
     Analisis CV untuk lowongan Astra tertentu
     job_type: 'erp_business_analyst' atau 'it_data_engineer'
     """
+    if request.method == 'OPTIONS':
+        return jsonify({"status": "success"}), 200
+        
     print(f"🔍 [ASTRA DEBUG] Memulai analisis CV untuk job: {job_type}")
     
     # Validasi job type
@@ -79,11 +82,19 @@ def analyze_cv_for_astra_job(job_type):
         # Parsing info kandidat dengan fallback
         try:
             parsed_info = parse_candidate_info(cv_text)
+            # ✅ TAMBAHKAN FULL TEXT untuk matching yang lebih baik
+            parsed_info['cv_full_text'] = cv_text
             print("✅ [ASTRA DEBUG] Parsing dengan BERT NER berhasil")
         except Exception as parse_error:
-            print(f"⚠️ [ASTRA DEBUG] Parsing BERT gagal, menggunakan fallback: {parse_error}")
+            print(f"⚠️ [ASTRA DEBUG] Parsing BERT gagal: {parse_error}")
             parsed_info = fallback_parse_candidate_info(cv_text)
+            parsed_info['cv_full_text'] = cv_text  # ✅ ADD HERE TOO
             print("✅ [ASTRA DEBUG] Parsing fallback berhasil")
+
+        # ✅ VALIDATE PARSED INFO
+        if parsed_info.get('gpa') is None:
+            print("⚠️ [ASTRA DEBUG] GPA is None, setting to 0.0")
+            parsed_info['gpa'] = 0.0
 
         # Analisis CV menggunakan service Astra
         analysis_result = AstraScoringService.analyze_cv_for_job(cv_text, job_type)
@@ -143,6 +154,25 @@ def analyze_cv_text_for_astra_job(job_type):
         }), 400
 
     try:
+        # ✅ INISIALISASI parsed_info
+        parsed_info = {}
+        
+        try:
+            parsed_info = parse_candidate_info(cv_text)
+        except Exception:
+            parsed_info = fallback_parse_candidate_info(cv_text)
+            
+        # ✅ PASTIKAN PARSED_INFO VALID
+        if not parsed_info:
+            parsed_info = {
+                'name': 'Tidak terdeteksi',
+                'email': 'Tidak terdeteksi', 
+                'phone': 'Tidak terdeteksi',
+                'gpa': 0.0,
+                'experience': 0,
+                'major': 'Tidak terdeteksi'
+            }
+
         # Analisis CV menggunakan service Astra
         analysis_result = AstraScoringService.analyze_cv_for_job(cv_text, job_type)
 
@@ -152,7 +182,8 @@ def analyze_cv_text_for_astra_job(job_type):
         response_data = {
             "status": "success", 
             "job_info": job_info,
-            "analysis_result": analysis_result
+            "analysis_result": analysis_result,
+            "parsed_info": parsed_info  # ✅ PASTIKAN SELALU ADA
         }
 
         return jsonify(response_data), 200

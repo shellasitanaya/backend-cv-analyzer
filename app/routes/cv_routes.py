@@ -1,3 +1,4 @@
+# filename: backend-cv-analyzer/app/routes/cv_routes.py
 from flask import Blueprint, send_file, request, current_app, jsonify
 from app.services.cv_generator import build_cv, build_cv_from_data
 from app.models import Candidate

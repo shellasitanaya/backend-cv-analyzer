@@ -21,7 +21,14 @@ def create_app():
     app.config.from_object(Config)
 
     # Allow CORS from React
-    cors.init_app(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+    cors.init_app(app, resources={
+        r"/api/*": {
+            "origins": "http://localhost:3000",
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "Accept"],
+            "supports_credentials": True
+        }
+    })
     
     create_database_if_not_exists()
 
@@ -31,18 +38,13 @@ def create_app():
     jwt.init_app(app)
     bcrypt.init_app(app)
 
-    app.register_blueprint(hr_bp)
-    app.register_blueprint(js_bp) 
-    app.register_blueprint(cv_bp) 
-    app.register_blueprint(skills_bp)
-    app.register_blueprint(experience_bp)
-
-
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(hr_bp, url_prefix="/api/hr")
     app.register_blueprint(js_bp, url_prefix="/api/jobseeker")
     app.register_blueprint(cv_bp, url_prefix="/api/cv")
     app.register_blueprint(astra_bp, url_prefix="/api/astra")
+    app.register_blueprint(skills_bp) 
+    app.register_blueprint(experience_bp)  
 
     app.cli.add_command(seed_all)
 
