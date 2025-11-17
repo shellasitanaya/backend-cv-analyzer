@@ -9,13 +9,26 @@ from .routes.cv_routes import cv_bp
 from .routes.auth_routes import auth_bp
 from .routes.astra_routes import astra_bp
 from app.database.seed.seed_all import seed_all  
+from .routes.experience import experience_bp
+from .routes.skills import skills_bp
+
 
 def create_app():
     app = Flask(__name__)
-    app.config.from_object(Config) 
-    
-    # 🔧 SIMPLE CORS - biarkan extension handle
-    cors.init_app(app)
+    # app.config.from_object(Config) 
+    # cors.init_app(app) # Mengaktifkan CORS untuk semua rute
+    # CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+    app.config.from_object(Config)
+
+    # Allow CORS from React
+    cors.init_app(app, resources={
+        r"/api/*": {
+            "origins": "http://localhost:3000",
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "Accept"],
+            "supports_credentials": True
+        }
+    })
     
     create_database_if_not_exists()
 
@@ -25,12 +38,13 @@ def create_app():
     jwt.init_app(app)
     bcrypt.init_app(app)
 
-    # Register blueprints
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(hr_bp, url_prefix="/api/hr")
     app.register_blueprint(js_bp, url_prefix="/api/jobseeker")
     app.register_blueprint(cv_bp, url_prefix="/api/cv")
     app.register_blueprint(astra_bp, url_prefix="/api/astra")
+    app.register_blueprint(skills_bp) 
+    app.register_blueprint(experience_bp)  
 
     app.cli.add_command(seed_all)
 

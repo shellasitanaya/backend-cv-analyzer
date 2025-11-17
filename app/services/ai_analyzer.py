@@ -144,13 +144,25 @@ def parse_candidate_info(text, required_skills=[]):
     gpa_match = re.search(pattern_with_keyword, text_lower)
 
     if not gpa_match:
-        pattern_without_keyword = r'([0-4][.,]\d+)\s*\/\s*4[.,]0+'
-        gpa_match = re.search(pattern_without_keyword, text_lower)
+        pattern_slash_4 = r'([0-4][.,]\d+)\s*\/\s*4[.,]0+'
+        gpa_match = re.search(pattern_slash_4, text_lower)
+
+    if not gpa_match:
+        pattern_slash_any = r'([0-4][.,]\d+)\s*\/\s*([0-4][.,]\d+)'
+        gpa_match = re.search(pattern_slash_any, text_lower)
 
     if gpa_match:
-        gpa_string = gpa_match.group(gpa_match.lastindex)
-        gpa_string_standard = gpa_string.replace(',', '.')
-        extracted_data['gpa'] = float(gpa_string_standard)
+        try:
+            gpa_string = gpa_match.group(1)  # ✅ ALWAYS take first number
+            gpa_string_standard = gpa_string.replace(',', '.')
+            extracted_data['gpa'] = float(gpa_string_standard)
+            print(f"✅ [GPA EXTRACTION] Found GPA: {extracted_data['gpa']}")
+        except (ValueError, IndexError) as e:
+            print(f"⚠️ [GPA EXTRACTION] Failed to parse: {e}")
+            extracted_data['gpa'] = 0.0
+    else:
+        print(f"⚠️ [GPA EXTRACTION] No GPA pattern found in CV")
+        extracted_data['gpa'] = 0.0
         
     year_ranges = re.findall(r'(\d{4})\s*-\s*(\d{4}|present|sekarang)', text, re.IGNORECASE)
     total_years = 0

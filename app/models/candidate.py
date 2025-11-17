@@ -23,4 +23,5 @@ class Candidate(db.Model):
     rejection_reason = db.Column(db.String(255))
 
     job = db.relationship("Job", back_populates="candidates")
-    candidate_skills = db.relationship("CandidateSkill", back_populates="candidate")  # <-- INI PENTING
+    candidate_skills = db.relationship("CandidateSkill", back_populates="candidate")
+

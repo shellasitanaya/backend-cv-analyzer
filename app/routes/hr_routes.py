@@ -1,3 +1,5 @@
+# filename: backend-cv-analyzer/app/routes/hr_routes.py
+
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request, get_jwt
@@ -152,7 +154,7 @@ def search_candidates_endpoint():
         if not keyword:
             return jsonify({
                 "status": "success",
-                "message": "Keyword kosong, tidak ada hasil",
+                "message": "Keyword not found, no results",
                 "data": []
             }), 200
 
@@ -160,7 +162,7 @@ def search_candidates_endpoint():
 
         return jsonify({
             "status": "success",
-            "message": f"{len(results)} kandidat ditemukan untuk keyword '{keyword}'",
+            "message": f"{len(results)} candidate found with the keyword '{keyword}'",
             "data": results
         }), 200
 
@@ -168,7 +170,7 @@ def search_candidates_endpoint():
         print("ERROR search_candidates:", e)
         return jsonify({
             "status": "error",
-            "message": "Terjadi kesalahan saat mencari kandidat",
+            "message": "There has been a mistake finding a candidate",
             "data": [],
             "details": str(e)
         }), 500

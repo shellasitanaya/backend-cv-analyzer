@@ -36,5 +36,4 @@ def downgrade():
                type_=mysql.TIMESTAMP(),
                nullable=False,
                existing_server_default=sa.text('current_timestamp()'))
-
-    # ### end Alembic commands ###
+4038b472f04a637760bae4045bd01f0fa0b4476c
