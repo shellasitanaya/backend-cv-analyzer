@@ -1,3 +1,5 @@
+# filename: backend-cv-analyzer/app/routes/hr_routes.py
+
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import (
@@ -279,44 +281,28 @@ def search_candidates_endpoint():
     try:
         keyword = request.args.get("q", "")
         if not keyword:
-            return (
-                jsonify(
-                    {
-                        "status": "success",
-                        "message": "Keyword kosong, tidak ada hasil",
-                        "data": [],
-                    }
-                ),
-                200,
-            )
+            return jsonify({
+                "status": "success",
+                "message": "Keyword not found, no results",
+                "data": []
+            }), 200
 
         results = search_candidates(keyword)
 
-        return (
-            jsonify(
-                {
-                    "status": "success",
-                    "message": f"{len(results)} kandidat ditemukan untuk keyword '{keyword}'",
-                    "data": results,
-                }
-            ),
-            200,
-        )
+        return jsonify({
+            "status": "success",
+            "message": f"{len(results)} candidate found with the keyword '{keyword}'",
+            "data": results
+        }), 200
 
     except Exception as e:
         print("ERROR search_candidates:", e)
-        return (
-            jsonify(
-                {
-                    "status": "error",
-                    "message": "Terjadi kesalahan saat mencari kandidat",
-                    "data": [],
-                    "details": str(e),
-                }
-            ),
-            500,
-        )
-
+        return jsonify({
+            "status": "error",
+            "message": "There has been a mistake finding a candidate",
+            "data": [],
+            "details": str(e)
+        }), 500
 
 # Endpoint untuk profil detail (lakukan hal yang sama)
 @hr_bp.route("/candidates/<candidate_id>", methods=["GET"])

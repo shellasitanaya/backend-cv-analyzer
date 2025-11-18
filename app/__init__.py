@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask
 from config import Config
 from pymysql import connect
 from .extensions import *
@@ -6,8 +6,12 @@ from .models import *
 from .routes.hr_routes import hr_bp
 from .routes.js_routes import js_bp 
 from .routes.cv_routes import cv_bp
-from app.routes.auth_routes import auth_bp
+from .routes.auth_routes import auth_bp
+from .routes.astra_routes import astra_bp
 from app.database.seed.seed_all import seed_all  
+from .routes.experience import experience_bp
+from .routes.skills import skills_bp
+
 
 def create_app():
     app = Flask(__name__)
@@ -17,7 +21,14 @@ def create_app():
     app.config.from_object(Config)
 
     # Allow CORS from React
-    cors.init_app(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+    cors.init_app(app, resources={
+        r"/api/*": {
+            "origins": "http://localhost:3000",
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "Accept"],
+            "supports_credentials": True
+        }
+    })
     
     create_database_if_not_exists()
 
@@ -27,13 +38,13 @@ def create_app():
     jwt.init_app(app)
     bcrypt.init_app(app)
 
-    app.register_blueprint(hr_bp)
-    app.register_blueprint(js_bp) 
-    app.register_blueprint(cv_bp) 
-
-
-
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
+    app.register_blueprint(hr_bp, url_prefix="/api/hr")
+    app.register_blueprint(js_bp, url_prefix="/api/jobseeker")
+    app.register_blueprint(cv_bp, url_prefix="/api/cv")
+    app.register_blueprint(astra_bp, url_prefix="/api/astra")
+    app.register_blueprint(skills_bp) 
+    app.register_blueprint(experience_bp)  
 
     app.cli.add_command(seed_all)
 
@@ -42,7 +53,7 @@ def create_app():
 def create_database_if_not_exists():
     host_parts = Config.DB_HOST.split(":")
     host = host_parts[0]
-    port = int(host_parts[1]) if len(host_parts) > 1 else 3306  # default to 3306
+    port = int(host_parts[1]) if len(host_parts) > 1 else 3306
 
     print(f"🔧 Ensuring database '{Config.DB_NAME}' exists...")
     print(f"Connecting to DB server at {host}:{port} with user '{Config.DB_USER}'")

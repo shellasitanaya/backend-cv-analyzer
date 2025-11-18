@@ -1,5 +1,5 @@
 from app.extensions import db
-from app.models import Job, Candidate, GeneratedCV, Skill, CandidateSkill
+from app.models import Job, Candidate, GeneratedCV, Skill, CandidateSkill, CV, Analysis, User
 import json
 
 def get_all_jobs():
@@ -61,7 +61,133 @@ def get_last_cv_version(original_cv_id: int) -> int:
     )
     return int(max_version) if max_version is not None else 0
 
-# helper function
+# ==================== JOB SEEKER FUNCTIONS (NEW) ====================
+
+def save_user_cv(user_id, cv_data, analysis_data):
+    """
+    Simpan CV user dan hasil analisis ke database
+    """
+    try:
+        # Simpan CV
+        new_cv = CV(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            cv_title=cv_data.get('cv_title', 'Untitled CV'),
+            original_filename=cv_data.get('original_filename'),
+            storage_path=cv_data.get('storage_path'),
+            uploaded_at=datetime.utcnow()
+        )
+        db.session.add(new_cv)
+
+        # Simpan Analysis
+        new_analysis = Analysis(
+            id=str(uuid.uuid4()),
+            cv_id=new_cv.id,
+            job_description_text=analysis_data.get('job_description_text', ''),
+            match_score=analysis_data.get('match_score'),
+            ats_check_result_json=analysis_data.get('ats_check_result_json'),
+            keyword_analysis_json=analysis_data.get('keyword_analysis_json'),
+            analyzed_at=datetime.utcnow()
+        )
+        db.session.add(new_analysis)
+
+        db.session.commit()
+        return {
+            "cv_id": new_cv.id,
+            "analysis_id": new_analysis.id
+        }
+    except Exception as e:
+        db.session.rollback()
+        print(f"Database error in save_user_cv: {e}")
+        return None
+
+def get_user_cvs_with_analyses(user_id):
+    """
+    Ambil semua CV user beserta analisis terbaru
+    """
+    try:
+        cvs = CV.query.filter_by(user_id=user_id).order_by(CV.uploaded_at.desc()).all()
+        
+        result = []
+        for cv in cvs:
+            # Get latest analysis for this CV
+            latest_analysis = Analysis.query.filter_by(cv_id=cv.id).order_by(Analysis.analyzed_at.desc()).first()
+            
+            cv_data = {
+                "cv_id": cv.id,
+                "cv_title": cv.cv_title,
+                "original_filename": cv.original_filename,
+                "uploaded_at": cv.uploaded_at.isoformat() if cv.uploaded_at else None,
+                "latest_analysis": None
+            }
+            
+            if latest_analysis:
+                cv_data["latest_analysis"] = {
+                    "analysis_id": latest_analysis.id,
+                    "match_score": float(latest_analysis.match_score) if latest_analysis.match_score else 0,
+                    "analyzed_at": latest_analysis.analyzed_at.isoformat() if latest_analysis.analyzed_at else None,
+                    "job_description_preview": latest_analysis.job_description_text[:100] + "..." if latest_analysis.job_description_text else ""
+                }
+            
+            result.append(cv_data)
+        
+        return result
+    except Exception as e:
+        print(f"Database error in get_user_cvs_with_analyses: {e}")
+        return []
+
+def get_analysis_detail(analysis_id, user_id):
+    """
+    Ambil detail analisis spesifik dengan validasi ownership
+    """
+    try:
+        analysis = db.session.query(Analysis).\
+            join(CV, Analysis.cv_id == CV.id).\
+            filter(Analysis.id == analysis_id, CV.user_id == user_id).\
+            first()
+        
+        if not analysis:
+            return None
+        
+        return {
+            "analysis_id": analysis.id,
+            "cv_id": analysis.cv_id,
+            "job_description": analysis.job_description_text,
+            "match_score": float(analysis.match_score) if analysis.match_score else 0,
+            "ats_check_result": analysis.ats_check_result_json or {},
+            "keyword_analysis": analysis.keyword_analysis_json or {},
+            "analyzed_at": analysis.analyzed_at.isoformat() if analysis.analyzed_at else None
+        }
+    except Exception as e:
+        print(f"Database error in get_analysis_detail: {e}")
+        return None
+
+def delete_user_cv(cv_id, user_id):
+    """
+    Hapus CV user dan semua analisis terkait
+    """
+    try:
+        cv = CV.query.filter_by(id=cv_id, user_id=user_id).first()
+        
+        if not cv:
+            return False
+
+        # Hapus file dari storage
+        if os.path.exists(cv.storage_path):
+            os.remove(cv.storage_path)
+
+        # Hapus dari database (cascade akan menghapus analyses juga)
+        db.session.delete(cv)
+        db.session.commit()
+        return True
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"Database error in delete_user_cv: {e}")
+        return False
+
+# ==================== HELPER FUNCTIONS ====================
+
 def job_to_dict(job: Job):
     return {
         "id": job.id,
@@ -216,3 +342,26 @@ def save_candidate(job_id, data):
 #         db.session.rollback()
 #         print(f"Database error in save_candidate: {e}")
 #         return None
+
+def cv_to_dict(cv: CV):
+    """Helper function untuk convert CV object ke dictionary"""
+    return {
+        "cv_id": cv.id,
+        "user_id": cv.user_id,
+        "cv_title": cv.cv_title,
+        "original_filename": cv.original_filename,
+        "storage_path": cv.storage_path,
+        "uploaded_at": cv.uploaded_at.isoformat() if cv.uploaded_at else None
+    }
+
+def analysis_to_dict(analysis: Analysis):
+    """Helper function untuk convert Analysis object ke dictionary"""
+    return {
+        "analysis_id": analysis.id,
+        "cv_id": analysis.cv_id,
+        "job_description": analysis.job_description_text,
+        "match_score": float(analysis.match_score) if analysis.match_score else 0,
+        "ats_check_result": analysis.ats_check_result_json or {},
+        "keyword_analysis": analysis.keyword_analysis_json or {},
+        "analyzed_at": analysis.analyzed_at.isoformat() if analysis.analyzed_at else None
+    }
