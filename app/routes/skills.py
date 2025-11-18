@@ -1,8 +1,8 @@
 # backend-cv-analyzer/app/routes/skills.py
 from flask import Blueprint, request, jsonify
-from app.models import Skill
+from app.models import Skill, Candidate
 from app.extensions import db
-from sqlalchemy import func
+from sqlalchemy import func, distinct
 
 skills_bp = Blueprint('skills', __name__)
 
@@ -12,7 +12,7 @@ def autocomplete_skills():
     
     print(f"🔍 Autocomplete request for: '{query}'")
     
-    if not query or len(query) < 1:  # Ubah menjadi 1 karakter minimal
+    if not query or len(query) < 1:
         return jsonify({'data': []})
     
     try:
@@ -21,12 +21,43 @@ def autocomplete_skills():
             db.session.query(Skill)
             .filter(func.lower(Skill.skill_name).like(f"%{query}%"))
             .order_by(Skill.skill_name)
-            .limit(15)  # Tambah limit menjadi 15
+            .limit(15)
             .all()
         )
         
-        results = [{"id": skill.id, "name": skill.skill_name} for skill in skills]
-        print(f"✅ Found {len(results)} skills for '{query}': {[r['name'] for r in results]}")
+        # Juga cari job titles/roles yang mengandung query
+        experiences = (
+            db.session.query(
+                distinct(func.lower(Candidate.experience)).label('experience')
+            )
+            .filter(func.lower(Candidate.experience).like(f"%{query}%"))
+            .limit(5)
+            .all()
+        )
+        
+        results = []
+        
+        # Tambahkan skills
+        for skill in skills:
+            results.append({
+                "id": skill.id, 
+                "name": skill.skill_name,
+                "type": "skill"
+            })
+        
+        # Tambahkan role suggestions
+        for exp in experiences:
+            if exp.experience and len(results) < 20:  # Batas total
+                # Extract kemungkinan job title dari experience
+                exp_lower = exp.experience.lower()
+                if any(role_word in exp_lower for role_word in ['developer', 'engineer', 'designer', 'manager', 'analyst']):
+                    results.append({
+                        "id": f"role_{len(results)}",
+                        "name": exp.experience[:50],  # Batasi panjang
+                        "type": "role"
+                    })
+        
+        print(f"✅ Found {len(results)} suggestions for '{query}'")
         
         return jsonify({'data': results})
         
