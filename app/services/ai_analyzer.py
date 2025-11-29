@@ -1,22 +1,62 @@
 # app/services/ai_analyzer.py
 import spacy
+import os
 import re
+import json
 import pprint
-import datetime
 import warnings
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from spacy.language import Language
+import datetime
 from typing import List, Dict, Union
 
+import spacy
+from spacy.language import Language
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+from dotenv import load_dotenv
+
+# ------------------------
+# Gemini
+# ------------------------
+import google.generativeai as genai
+
+# ------------------------
+# Transformers (NER Indonesia)
+# ------------------------
 try:
     from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
     import torch
-    warnings.filterwarnings("ignore", "Some weights of the model were not initialized")
 except ImportError:
-    print("ERROR: Pustaka 'transformers' atau 'torch' tidak ditemukan. Harap install dengan 'pip install transformers torch'")
+    print("ERROR: transformers/torch missing. Install via: pip install transformers torch")
+    pass
 
-# Inisialisasi NER Pipeline menggunakan BERT Indonesia
+# ===============================================
+# 1. INITIALIZATION
+# ===============================================
+
+load_dotenv()
+api_key = os.getenv("GOOGLE_API_KEY")
+
+if api_key:
+    genai.configure(api_key=api_key)
+    print("--- Gemini configured. ---")
+else:
+    print("ERROR: GOOGLE_API_KEY not found in .env")
+
+# --- 2. DAFTAR SKILL  ---
+BUSINESS_ANALYST_SKILLS = [
+    "Business Process Modeling", "Requirement Gathering", "SAP", "ERP", "SQL", 
+    "Finance", "Communication", "Analytical Thinking", "Negotiation", 
+    "Stakeholder Management", "Project Management", "Agile", "Scrum",
+]
+DATA_ENGINEER_SKILLS = [
+    "Python", "SQL", "ETL", "Data Warehousing", "Spark", "Airflow", 
+    "Problem Solving", "Analytical Thinking", "Data-driven", "AWS", 
+    "GCP", "Tableau", "Power BI",
+]
+
+# Load BERT Indonesian NER
 NER_INDONESIA_PIPELINE = None
 try:
     model_name = "cahya/bert-base-indonesian-NER"
@@ -24,13 +64,13 @@ try:
     model = AutoModelForTokenClassification.from_pretrained(model_name)
     NER_INDONESIA_PIPELINE = pipeline(
         "ner", 
-        model=model, 
+        model=model,
         tokenizer=tokenizer,
-        aggregation_strategy="simple" 
+        aggregation_strategy="simple"
     )
-    print(f"--- Model NER Indonesia '{model_name}' (Hugging Face) berhasil dimuat. ---")
+    print(f"--- BERT NER Indonesia '{model_name}' loaded. ---")
 except Exception as e:
-    print(f"ERROR: Gagal memuat model NER Indonesia: {e}")
+    print(f"ERROR loading NER model: {e}")
 
 # Muat model bahasa Inggris dari spaCy
 try:
@@ -72,32 +112,123 @@ JOB_SPECIFIC_KEYWORDS = {
 }
 
 def normalize_name(name: str) -> str:
-    """Normalisasi nama: kapitalisasi tiap kata, kecuali singkatan full uppercase."""
     if not name:
         return None
     words = name.split()
-    normalized_words = []
+    output = []
     for w in words:
         if w.isupper():
-            normalized_words.append(w)
+            output.append(w)
         else:
             normalized_words.append(w.capitalize())
     return " ".join(normalized_words)
 
 def extract_name_with_fallback(text):
-    # cari baris sebelum email
     lines = text.strip().splitlines()
     for i, line in enumerate(lines):
-        if re.search(r'@', line) or re.search(r'\d{9,}', line):  # baris email/phone
+        if re.search(r'@', line) or re.search(r'\d{9,}', line):
             if i > 0:
                 candidate = lines[i-1].strip()
-                # pastikan bukan "Member of..." atau kata teknis
                 if (len(candidate.split()) >= 2 and 
                     not re.search(r'(Member|Division|Tech Stack|github|linkedin)', candidate, re.IGNORECASE)):
                     return candidate
     return None
 
-def parse_candidate_info(text, required_skills=[]):
+
+# ===============================================
+# 3. AI FIRST, THEN FALLBACK PARSER
+# ===============================================
+
+# --- 3. FUNGSI PARSING UTAMA (PAKE AI) ---
+
+def parse_candidate_info(cv_text, required_skills=[]):
+    """
+    Mengekstrak info kandidat menggunakan Model AI (Gemini)
+    untuk mendapatkan hasil yang jauh lebih akurat daripada Regex.
+    """
+    
+    # Definisikan model
+    try:
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
+    except Exception as e:
+        print(f"ERROR: Tidak bisa memuat model Gemini: {e}")
+        return {} 
+
+    # Ini adalah struktur JSON yang WAJIB dipatuhi oleh sisa aplikasi Anda.
+    # AI akan kita paksa untuk mengikuti skema ini.
+    json_schema = {
+        "name": "Nama lengkap kandidat (string)",
+        "email": "Email kandidat (string, null jika tidak ada)",
+        "phone": "Nomor telepon kandidat (string, null jika tidak ada)",
+        "gpa": "IPK sebagai angka float (float, null jika tidak ada)",
+        "education": "Tingkat pendidikan (string, misal: S1, S2, null jika tidak ada)",
+        # --- PERUBAHAN DI SINI ---
+        "skills": ["skill 1", "skill 2"], # List SEMUA skill yang ditemukan di CV (bukan hanya yang cocok)
+        # -------------------------
+        "experience": ["Jabatan 1 di Perusahaan 1 (Tanggal 1 - Tanggal 2)", "Jabatan 2 (Tanggal 3 - Tanggal 4)"], # List detail pengalaman
+        "total_experience": 0 # Total tahun pengalaman sebagai ANGKA INTEGER
+    }
+    
+    # Buat Prompt (Instruksi) untuk AI
+    prompt = f"""
+    Anda adalah asisten HR AI yang sangat teliti. Tugas Anda adalah mengekstrak informasi dari teks CV berikut.
+    Kembalikan jawaban HANYA dalam format JSON yang valid, TANPA teks tambahan di awal atau akhir.
+    
+    Skema JSON yang WAJIB Anda ikuti:
+    {json.dumps(json_schema, indent=2)}
+    
+    Instruksi Penting:
+    1.  **name**: Ekstrak nama lengkap orang tersebut.
+    2.  **gpa**: Cari IPK (GPA) dan ubah menjadi float (misal: 3.37). Jika tidak ada, kembalikan null.
+    3. **education**": "Tingkat pendidikan DAN jurusan (string, contoh: 'S1 Computer Science', 'D3 Teknik Informatika', null jika tidak ada)",
+    
+    # --- PERUBAHAN DI SINI ---
+    4.  **skills**: Ekstrak SEMUA skill (keahlian teknis atau soft skill) yang Anda temukan di CV. Kembalikan sebagai sebuah list string. Contoh: ["Python", "SQL", "Tableau", "Leadership", "Communication"].
+    # -------------------------
+    
+    5.  **experience**: Ekstrak setiap pengalaman kerja sebagai SATU string per pekerjaan, gabungkan jabatan, perusahaan (jika ada), dan tanggal. Contoh: ["Business Analyst di CV. Nur Cahaya Pratama (May 2023–NOW)", "Data Analyst di UD Bangkit (May 2022–May 2023)"].
+    6.  **total_experience**: Hitung total tahun pengalaman kerja. 
+        Jika kandidat memiliki banyak pekerjaan yang tumpang tindih. Jangan jumlahkan durasi setiap proyek. 
+        Sebaliknya, tentukan tanggal pekerjaan paling awal (contoh: 2005) dan tanggal pekerjaan terakhir (contoh: 2025). 
+        Hitung total rentang karirnya (contoh: 2025 - 2005 = 20). 
+        Kembalikan sebagai SATU ANGKA INTEGER. Gunakan tahun 2025 sebagai tahun "NOW" atau "PRESENT".
+    7.  Jika sebuah field tidak ditemukan, kembalikan null (kecuali untuk 'skills' dan 'experience', kembalikan []). JANGAN tambahkan field di luar skema.
+    
+    Berikut adalah teks CV-nya:
+    ---
+    {cv_text}
+    ---
+    
+    JSON Output:
+    """
+
+    # 4. Panggil API
+    try:
+        print(f"[DEBUG] Memanggil API Gemini untuk parsing...")
+        # (Konfigurasi untuk memastikan output JSON)
+        generation_config = genai.GenerationConfig(
+            response_mime_type="application/json"
+        )
+        response = model.generate_content(prompt, generation_config=generation_config)
+        
+        # 5. Parse Respon JSON
+        parsed_data = json.loads(response.text)
+        
+        # Pastikan semua key ada untuk menghindari error di backend
+        final_data = json_schema.copy()
+        final_data.update(parsed_data)
+        
+        return final_data
+
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Gagal mem-parse JSON dari Gemini: {e}")
+        print(f"Response mentah: {response.text}")
+        return json_schema # Kembalikan skema kosong
+    except Exception as e:
+        print(f"ERROR: Terjadi kesalahan saat memanggil API Gemini: {e}")
+        return json_schema # Kembalikan skema kosong
+    
+def parse_candidate_info_2(text, required_skills=[]):
     """
     Mengekstrak informasi terstruktur:
     - Nama: Menggunakan BERT NER Indonesia.

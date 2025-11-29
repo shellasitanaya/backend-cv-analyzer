@@ -26,7 +26,7 @@ def create_app():
             "origins": "http://localhost:3000",
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "Accept"],
-            "supports_credentials": True
+            # "supports_credentials": True
         }
     })
     

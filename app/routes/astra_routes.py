@@ -3,7 +3,7 @@ from werkzeug.utils import secure_filename
 import os
 from app.services.astra_scoring_service import AstraScoringService
 from app.services.cv_parser import extract_text
-from app.services.ai_analyzer import parse_candidate_info, fallback_parse_candidate_info
+from app.services.ai_analyzer import parse_candidate_info_2, fallback_parse_candidate_info
 import traceback
 
 astra_bp = Blueprint('astra_api', __name__, url_prefix='/api/astra')
@@ -28,7 +28,7 @@ def get_astra_jobs():
             "message": f"Gagal mengambil data lowongan: {str(e)}"
         }), 500
 
-@astra_bp.route('/analyze/<job_type>', methods=['POST', 'OPTIONS'])
+@astra_bp.route('/analyze/<job_type>', methods=['POST'])
 def analyze_cv_for_astra_job(job_type):
     """
     Analisis CV untuk lowongan Astra tertentu
@@ -81,7 +81,7 @@ def analyze_cv_for_astra_job(job_type):
 
         # Parsing info kandidat dengan fallback
         try:
-            parsed_info = parse_candidate_info(cv_text)
+            parsed_info = parse_candidate_info_2(cv_text)
             # ✅ TAMBAHKAN FULL TEXT untuk matching yang lebih baik
             parsed_info['cv_full_text'] = cv_text
             print("✅ [ASTRA DEBUG] Parsing dengan BERT NER berhasil")
@@ -158,7 +158,7 @@ def analyze_cv_text_for_astra_job(job_type):
         parsed_info = {}
         
         try:
-            parsed_info = parse_candidate_info(cv_text)
+            parsed_info = parse_candidate_info_2(cv_text)
         except Exception:
             parsed_info = fallback_parse_candidate_info(cv_text)
             
