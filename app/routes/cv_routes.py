@@ -1,5 +1,5 @@
-# filename: backend-cv-analyzer/app/routes/cv_routes.py
-from flask import Blueprint, send_file, request, current_app, jsonify
+import base64
+from flask import Blueprint, send_file, request, current_app, jsonify, session
 from app.services.cv_generator import build_cv, build_cv_from_data
 from app.models import Candidate
 import os
@@ -65,13 +65,29 @@ def generate_custom_cv():
 
         print("🔍 [GENERATE_CUSTOM] Received request")
         template_name = data.get("template", "modern")
-        use_ai_phrasing = data.get("use_ai_phrasing", True)  # Default true
+        use_ai_phrasing = data.get("use_ai_phrasing", True)
 
-        # Use build_cv_from_data with AI phrasing parameter
         from app.services.cv_generator import build_cv_from_data
         
-        output_path = build_cv_from_data(data, template_name, use_ai_phrasing)
-        return send_file(output_path, as_attachment=True, download_name="generated_cv.pdf")
+        # Get both PDF path and processed data
+        output_path, processed_data = build_cv_from_data(data, template_name, use_ai_phrasing)
+        
+        # Store processed data in session for editing
+        session['last_cv_data'] = processed_data
+        session['last_template'] = template_name
+        
+        # Read PDF file and convert to base64 for JSON response
+        with open(output_path, 'rb') as f:
+            pdf_data = f.read()
+        pdf_base64 = base64.b64encode(pdf_data).decode('utf-8')
+        
+        return jsonify({
+            'success': True,
+            'pdf_base64': pdf_base64,
+            'processed_data': processed_data,
+            'improved_with_ai': use_ai_phrasing,
+            'message': 'CV generated successfully'
+        })
 
     except Exception as e:
         print(f"❌ [GENERATE_CUSTOM] Error: {str(e)}")
@@ -84,6 +100,26 @@ def generate_custom_cv():
             "details": str(e),
             "type": type(e).__name__
         }), 500
+
+@cv_bp.route("/get_last_cv_data", methods=["GET"])
+def get_last_cv_data():
+    """
+    Get the last generated CV data for editing
+    """
+    last_data = session.get('last_cv_data')
+    last_template = session.get('last_template', 'modern')
+    
+    if last_data:
+        return jsonify({
+            'success': True,
+            'data': last_data,
+            'template': last_template
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': 'No previous CV data found'
+        }), 404
     
 # === [4] Preview CV (endpoint yang digunakan frontend) ===
 @cv_bp.route("/preview", methods=["POST", "OPTIONS"])

@@ -323,6 +323,7 @@ def build_cv(candidate_id):
 def build_cv_from_data(data, template="modern", use_ai_phrasing=True):
     """
     Generate CV directly from user form data (no DB).
+    Returns: (output_path, processed_data)
     """
     try:
         print("🔍 [DEBUG] ========== RAW DATA RECEIVED ==========")
@@ -377,7 +378,8 @@ def build_cv_from_data(data, template="modern", use_ai_phrasing=True):
                         "degree": (edu.get("degree") or "").strip(),
                         "university": (edu.get("university") or "").strip(),
                         "graduation_year": (edu.get("graduation_year") or "").strip(),
-                        "major": (edu.get("major") or "").strip()
+                        "major": (edu.get("major") or "").strip(),
+                        "gpa": (edu.get("gpa") or "").strip()  
                     }
                     education_list.append(cleaned_edu)
 
@@ -423,12 +425,36 @@ def build_cv_from_data(data, template="modern", use_ai_phrasing=True):
         print(f"✅ [DEBUG] Name: {candidate_data.get('extracted_name')}")
         print(f"✅ [DEBUG] Work Experience items: {len(candidate_data.get('work_experience', []))}")
 
+        # Store original data for reference
+        original_data = {
+            "summary": candidate_data.get("summary", ""),
+            "work_experience": [exp.copy() for exp in candidate_data.get("work_experience", [])]
+        }
+
         # Apply AI phrasing if enabled
         if use_ai_phrasing:
             print("🔄 Applying AI phrasing improvements...")
             candidate_data = ai_cv_generator.apply_ai_phrasing(candidate_data)
         else:
             print("ℹ️ AI phrasing disabled, using original content")
+
+        # Create processed data for frontend (with AI-phrased content)
+        processed_data = {
+            "extracted_name": candidate_data.get("extracted_name", ""),
+            "email": candidate_data.get("extracted_email", ""),
+            "phone": candidate_data.get("extracted_phone", ""),
+            "summary": candidate_data.get("summary", ""),  # This is AI-phrased if enabled
+            "work_experience": candidate_data.get("work_experience", []),  # AI-phrased if enabled
+            "education": candidate_data.get("education", []),
+            "skills": candidate_data.get("skills", ""),
+            "linkedin_url": candidate_data.get("personal_info", {}).get("linkedin_url", ""),
+            "portfolio_url": candidate_data.get("personal_info", {}).get("portfolio_url", ""),
+            "template": template,
+            "use_ai_phrasing": use_ai_phrasing,
+            # Store original for reference if needed
+            "_original_summary": original_data["summary"],
+            "_original_experiences": original_data["work_experience"]
+        }
 
         # Render template
         template_dir = os.path.join(current_app.root_path, "templates")
@@ -454,7 +480,8 @@ def build_cv_from_data(data, template="modern", use_ai_phrasing=True):
         HTML(string=rendered_html).write_pdf(output_path)
         print(f"✅ [DEBUG] PDF generated at: {output_path}")
 
-        return output_path
+        # Return both PDF path and processed data
+        return output_path, processed_data
 
     except Exception as e:
         print(f"❌ [DEBUG] Error in build_cv_from_data: {e}")
