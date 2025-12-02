@@ -25,13 +25,13 @@ except ImportError:
 # ===============================================
 
 load_dotenv()
-api_key = os.getenv("GOOGLE_API_KEY")
+api_key = os.getenv("GEMINI_API_KEY")
 
 if api_key:
     genai.configure(api_key=api_key)
     print("--- Gemini configured. ---")
 else:
-    print("ERROR: GOOGLE_API_KEY not found in .env")
+    print("ERROR: GEMINI_API_KEY not found in .env")
 
 # --- 2. DAFTAR SKILL  ---
 BUSINESS_ANALYST_SKILLS = [
