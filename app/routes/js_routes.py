@@ -38,6 +38,7 @@ def analyze_cv():
 
     current_user_id = get_jwt_identity()
     filename = secure_filename(cv_file.filename)
+    
     temp_filename = f"{uuid.uuid4()}_{filename}"
     temp_path = os.path.join(UPLOAD_FOLDER, temp_filename)
 
@@ -48,7 +49,7 @@ def analyze_cv():
         if not cv_text or len(cv_text) < 50:
             raise ValueError("CV kosong atau tidak terbaca (Scan Image/Corrupt).")
 
-        # --- 1. CALL GEMINI ---
+        # 1. Gemini Analysis
         gemini_result = AstraScoringService.analyze_cv_with_gemini(
             cv_text=cv_text, 
             job_desc_text=job_description_text,
@@ -58,15 +59,15 @@ def analyze_cv():
         if gemini_result.get('error'):
              raise ValueError(f"Gemini Error: {gemini_result['error']}")
 
-        # --- 2. ANALISIS PENDUKUNG (DATA REAL) ---
+        # 2. Pendukung Analysis
         ats_results = check_ats_friendliness(cv_text)
         keyword_results = analyze_keywords(cv_text, job_description_text)
         
-        # [FIX] HITUNG JUMLAH KATA ASLI (REAL DATA)
+        # [FIX] Real Word Count
         real_word_count = len(cv_text.split())
         keyword_results['total_words'] = real_word_count
 
-        # --- 3. SIMPAN KE DB ---
+        # 3. Simpan CV
         cv_id = str(uuid.uuid4())
         perm_folder = f"user_uploads/{current_user_id}"
         os.makedirs(perm_folder, exist_ok=True)
@@ -84,29 +85,32 @@ def analyze_cv():
         )
         db.session.add(new_cv)
 
+        # 4. Simpan Analysis (FIX ERROR DISINI)
+        # ==========================================
+        analysis_id = str(uuid.uuid4())  # <--- INI YANG KURANG TADI
+        # ==========================================
+        
         full_job_desc_stored = f"{job_title_input}\n\n{job_description_text}"
 
         new_analysis = Analysis(
-            id=str(uuid.uuid4()),
+            id=analysis_id, # Pakai variabel yang sudah didefinisikan
             cv_id=cv_id,
             job_description_text=full_job_desc_stored,
             match_score=gemini_result.get('skor_akhir', 0),
             ats_check_result_json=ats_results, 
-            keyword_analysis_json=keyword_results, # Data ini sekarang berisi 'total_words' asli
+            keyword_analysis_json=keyword_results, 
             phrasing_suggestions_json=gemini_result.get('ai_analysis', {}),
             analyzed_at=datetime.utcnow()
         )
         db.session.add(new_analysis)
-        
-        # === PERBAIKAN #3: Commit ke database ===
         db.session.commit()
-        print(f"✅ CV {cv_id} dan Analisis {analysis_id} berhasil disimpan ke DB.")
 
         return jsonify({
             "status": "success",
+            "analysis_id": analysis_id, # Sekarang variabel ini dikenali
             "match_score": gemini_result.get('skor_akhir', 0),
             "gemini_result": gemini_result,
-            "keyword_analysis": keyword_results, # Kirim balik ke frontend
+            "keyword_analysis": keyword_results,
             "job_info": gemini_result.get('job_info', {})
         }), 200
 
@@ -118,6 +122,8 @@ def analyze_cv():
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
+# (Sisa endpoint GET/DELETE di bawahnya biarkan sama, tidak ada yang berubah logicnya)
+# Copy paste dari file sebelumnya jika perlu, atau biarkan saja kalau Anda sudah punya
 @js_bp.route('/my-cvs', methods=['GET'])
 @jwt_required()
 def get_my_cvs():
@@ -173,7 +179,7 @@ def get_analysis_detail(analysis_id):
             "data": {
                 "match_score": float(analysis.match_score),
                 "gemini_result": {"ai_analysis": gemini_data},
-                "keyword_analysis": keyword_data, # Pastikan ini dikirim
+                "keyword_analysis": keyword_data,
                 "ats_friendliness": analysis.ats_check_result_json,
                 "job_description": analysis.job_description_text
             }
