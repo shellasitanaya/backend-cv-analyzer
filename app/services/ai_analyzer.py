@@ -5,23 +5,14 @@ import pprint
 import warnings
 import datetime
 from typing import List, Dict, Union
-
 import spacy
 from spacy.language import Language
-
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-
 from dotenv import load_dotenv
-
-# ------------------------
-# Gemini
-# ------------------------
 import google.generativeai as genai
 
-# ------------------------
-# Transformers (NER Indonesia)
-# ------------------------
+
 try:
     from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
     import torch
