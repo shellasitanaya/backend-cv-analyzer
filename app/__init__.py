@@ -3,7 +3,7 @@ from config import Config
 from pymysql import connect
 from .extensions import *
 from .models import *
-from .routes.hr_routes import hr_bp
+from .routes.hr_routes import hr_bp, candidate_bp  
 from .routes.js_routes import js_bp 
 from .routes.cv_routes import cv_bp
 from .routes.auth_routes import auth_bp
@@ -11,6 +11,7 @@ from .routes.astra_routes import astra_bp
 from app.database.seed.seed_all import seed_all  
 from .routes.experience import experience_bp
 from .routes.skills import skills_bp
+from .routes.hr_routes import candidate_bp
 
 
 def create_app():
@@ -38,6 +39,7 @@ def create_app():
     jwt.init_app(app)
     bcrypt.init_app(app)
 
+    app.register_blueprint(candidate_bp)
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(hr_bp, url_prefix="/api/hr")
     app.register_blueprint(js_bp, url_prefix="/api/jobseeker")
@@ -45,6 +47,7 @@ def create_app():
     app.register_blueprint(astra_bp, url_prefix="/api/astra")
     app.register_blueprint(skills_bp) 
     app.register_blueprint(experience_bp)  
+    
 
     app.cli.add_command(seed_all)
 
