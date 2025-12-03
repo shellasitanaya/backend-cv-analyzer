@@ -18,20 +18,27 @@ else:
     print("\033[91m⚠️ FATAL ERROR: GEMINI_API_KEY tidak ditemukan di file .env\033[0m")
 
 def get_best_available_model():
-    """Auto-detect model terbaik."""
+    """Auto-detect model terbaik (Prioritas Gemini 2.5)."""
     try:
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Prioritas: Model 2.0 -> 1.5
-        priority_list = ['models/gemini-2.0-flash', 'models/gemini-1.5-pro', 'models/gemini-1.5-flash']
+        
+        # PRIORITAS BARU: Gemini 2.5 -> 2.0 -> 1.5
+        priority_list = [
+            'models/gemini-2.5-flash',
+            'models/gemini-2.0-flash',
+            'models/gemini-1.5-pro',
+            'models/gemini-1.5-flash', 
+            'models/gemini-pro'
+        ]
         for model_name in priority_list:
             if model_name in available_models: return model_name
-        return available_models[0]
+        return available_models[0] if available_models else 'models/gemini-pro'
     except: return 'models/gemini-1.5-flash'
 
 class AstraScoringService:
     """
     Service penilaian CV berbasis Rubrik 60/20/20.
-    Fokus: Mengaudit kualitas penulisan dan bukti kompetensi.
+    Logika: AI memberi nilai mentah (0-100), Python menghitung bobot.
     """
 
     @staticmethod
@@ -45,11 +52,10 @@ class AstraScoringService:
         print(f"🚀 [ASTRA OPTIMIZER] ANALYZING: {job_title}")
         print("="*70)
 
-        # --- PROMPT: RUBRIK 60/20/20 & EVIDENCE AUDIT ---
+        # --- PROMPT: LOGIC FIX (SCORE 0-100 PER CATEGORY) ---
         prompt = f"""
         Act as a Senior CV Consultant & Optimizer.
         Your goal is to audit the QUALITY of the candidate's CV based on the Job Description.
-        Do not guess their skill level. Judge how well they **DEMONSTRATE** it in the text.
 
         === JOB TARGET ===
         POSITION: {job_title}
@@ -57,37 +63,32 @@ class AstraScoringService:
         CURRENT YEAR: {current_year}
 
         === CANDIDATE CV ===
-        {cv_text[:30000]}
+        {cv_text[:40000]}
 
-        === SCORING RUBRIC (TOTAL 100.0) ===
+        === SCORING INSTRUCTIONS (CRITICAL) ===
+        Rate each category on a scale of **0 to 100**.
         
-        1. **Relevansi Hard Skill (Bobot 60.0)**
-           - Score based on the presence of required skills.
-           - *Calculation:* If 10 skills needed and 8 are found (in any section), base score is high.
+        1. **Relevance (0-100)**: 
+           - How many required hard skills are present? 
+           - Are they backed by project context?
+           - *Example:* 80/100 means strong match but missing 1-2 niche skills.
         
-        2. **Senioritas & Durasi (Bobot 20.0)**
-           - Check if total relevant experience meets the requirement.
-           - Check if the role titles match the seniority level.
+        2. **Seniority (0-100)**:
+           - Does experience duration match the role?
+           - Does the candidate show career progression?
+           - *Example:* 100/100 means perfect seniority match. 50/100 means too junior.
 
-        3. **Kualitas Deskripsi & Dampak (Bobot 20.0)**
-           - **Action Verbs:** Are they using "Led", "Developed", "Architected"? (Good) or "Helped", "Responsible for"? (Weak)
-           - **Quantitative Impact:** Are there numbers? (e.g. "20% growth", "10k users").
-           - *Penalty:* If description is generic/vague, score low here.
+        3. **Quality (0-100)**:
+           - Usage of Action Verbs ("Led", "Built") vs Passive ("Helped").
+           - Usage of Numbers/Metrics ("Improved by 20%").
+           - *Example:* 60/100 means good content but lacks numbers.
 
-        === INSTRUCTIONS FOR SKILL ANALYSIS ===
-        For each required skill, assign a **"Proof Level"** (not Skill Level):
-
-        - **"Strong Evidence" (10)**: Appears in "Work Experience" WITH specific context/impact/metrics.
-          *Feedback:* "Sangat baik. Bukti kuat dengan konteks nyata."
-        
-        - **"Standard Context" (7.5)**: Appears in "Work Experience" but generic description (no metrics).
-          *Feedback:* "Ada di pengalaman kerja, tapi deskripsi terlalu umum. Tambahkan dampak/angka (Impact) agar lebih meyakinkan."
-        
-        - **"Listed Only" (5.0)**: Only found in "Skills" list or "Education" without project context.
-          *Feedback:* "Hanya scannable sebagai kata kunci. Wajib masukkan ke deskripsi pengalaman kerja dengan contoh nyata."
-        
-        - **"Missing" (0.0)**: Not found.
-          *Feedback:* "Fatal. Keyword ini tidak ditemukan. Tambahkan segera jika Anda memilikinya."
+        === SKILL ANALYSIS INSTRUCTIONS ===
+        For each required skill, assign a **"Proof Level"**:
+        - **"Strong Evidence"**: Found in Work Experience with context/metrics.
+        - **"Standard Context"**: Found in Work Experience but generic.
+        - **"Listed Only"**: Found in Skills list only.
+        - **"Missing"**: Not found.
 
         === OUTPUT JSON FORMAT ===
         {{
@@ -98,9 +99,9 @@ class AstraScoringService:
                 "experience_years": {{ "value": "Angka", "status": "PASS/FAIL" }}
             }},
             "rubric_scores": {{
-                "relevance_score": 0.0, 
-                "seniority_score": 0.0, 
-                "quality_score": 0.0
+                "relevance_raw": 0.0,  
+                "seniority_raw": 0.0, 
+                "quality_raw": 0.0
             }},
             "skills_analysis": [
                 {{ 
@@ -125,23 +126,28 @@ class AstraScoringService:
             )
             result = json.loads(response.text)
 
-            # --- CALCULATION ---
+            # --- PYTHON CALCULATION (The Real Logic) ---
             rubric = result.get('rubric_scores', {})
             
-            # 1. Total Score (60+20+20)
-            final_score = float(rubric.get('relevance_score', 0)) + \
-                          float(rubric.get('seniority_score', 0)) + \
-                          float(rubric.get('quality_score', 0))
+            # Ambil Raw Score (0-100) dari AI
+            raw_rel = float(rubric.get('relevance_raw', 0))
+            raw_sen = float(rubric.get('seniority_raw', 0))
+            raw_qua = float(rubric.get('quality_raw', 0))
+
+            # Hitung Bobot (Weighted Score)
+            weighted_rel = raw_rel * 0.60  # Bobot 60%
+            weighted_sen = raw_sen * 0.20  # Bobot 20%
+            weighted_qua = raw_qua * 0.20  # Bobot 20%
             
-            # Cap at 100
+            # Total Score
+            final_score = weighted_rel + weighted_sen + weighted_qua
             final_score = min(100.0, final_score)
 
-            # 2. Mandatory Penalty (Strict Filter)
+            # --- MANDATORY PENALTY ---
             mandatory = result.get('mandatory_checks', {})
             is_failed = False
             fail_reasons = []
             
-            # Cek Status (Kecuali GPA, GPA pass/note aman)
             if mandatory.get('major', {}).get('status') == 'FAIL':
                 is_failed = True; fail_reasons.append("Jurusan Tidak Relevan")
             if mandatory.get('experience_years', {}).get('status') == 'FAIL':
@@ -152,12 +158,20 @@ class AstraScoringService:
                 print(f"⛔ GATEKEEPER: Failed due to {fail_reasons}")
 
             # --- LOGGING TO TERMINAL ---
-            print(f"\n📊 RUBRIC SCORE:")
-            print(f"   - Relevansi (60%): {rubric.get('relevance_score')}")
-            print(f"   - Senioritas (20%): {rubric.get('seniority_score')}")
-            print(f"   - Kualitas (20%): {rubric.get('quality_score')}")
-            print(f"   🏁 TOTAL: {final_score:.2f}%")
+            print(f"\n📊 RUBRIC CALCULATION:")
+            print(f"   1. Relevansi  (60%): {raw_rel:>5.1f} x 0.6 = {weighted_rel:>5.1f}")
+            print(f"   2. Senioritas (20%): {raw_sen:>5.1f} x 0.2 = {weighted_sen:>5.1f}")
+            print(f"   3. Kualitas   (20%): {raw_qua:>5.1f} x 0.2 = {weighted_qua:>5.1f}")
+            print(f"   ---------------------------------------")
+            print(f"   🏁 FINAL SCORE     : {final_score:>5.1f}%")
             print("="*70 + "\n")
+
+            # Update result structure untuk frontend (kirim nilai terbobot agar bar chart sesuai)
+            result['rubric_scores'] = {
+                "relevance_score": weighted_rel,
+                "seniority_score": weighted_sen,
+                "quality_score": weighted_qua
+            }
 
             return {
                 "lulus": final_score >= 60,
