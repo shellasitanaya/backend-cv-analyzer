@@ -15,17 +15,15 @@ GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GENAI_API_KEY:
     genai.configure(api_key=GENAI_API_KEY)
 else:
-    print("\033[91m⚠️ FATAL ERROR: GEMINI_API_KEY tidak ditemukan di file .env\033[0m")
+    print("\033[91m⚠ FATAL ERROR: GEMINI_API_KEY tidak ditemukan di file .env\033[0m")
 
 def get_best_available_model():
-    """Auto-detect model terbaik (Prioritas Gemini 2.5)."""
+    """Auto-detect model terbaik."""
     try:
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # PRIORITAS BARU: Gemini 2.5 -> 2.0 -> 1.5
         priority_list = [
-            'models/gemini-2.5-flash',
-            'models/gemini-2.0-flash',
+            'models/gemini-2.5-flash', 
+            'models/gemini-2.0-flash', 
             'models/gemini-1.5-pro',
             'models/gemini-1.5-flash', 
             'models/gemini-pro'
@@ -37,8 +35,8 @@ def get_best_available_model():
 
 class AstraScoringService:
     """
-    Service penilaian CV berbasis Rubrik 60/20/20.
-    Logika: AI memberi nilai mentah (0-100), Python menghitung bobot.
+    Service penilaian CV dengan Smart GPA Validation, Rubrik 60/20/20, dan Gatekeeper.
+    Output: ALWAYS ENGLISH.
     """
 
     @staticmethod
@@ -49,54 +47,71 @@ class AstraScoringService:
 
         # --- LOGGING ---
         print("\n" + "="*70)
-        print(f"🚀 [ASTRA OPTIMIZER] ANALYZING: {job_title}")
+        print(f"🚀 [ASTRA SMART ANALYZER] Processing: {job_title}")
         print("="*70)
 
-        # --- PROMPT: LOGIC FIX (SCORE 0-100 PER CATEGORY) ---
+        # --- PROMPT: ALWAYS ENGLISH ---
         prompt = f"""
-        Act as a Senior CV Consultant & Optimizer.
-        Your goal is to audit the QUALITY of the candidate's CV based on the Job Description.
+        Act as a Global Senior Recruiter & Career Coach.
+        Your goal is to evaluate the candidate based on specific criteria with HIGH PRECISION.
+        
+        *CRITICAL RULE:* ALL OUTPUT MUST BE IN *ENGLISH*, regardless of the CV language.
 
-        === JOB TARGET ===
+        === JOB REQUIREMENT ===
         POSITION: {job_title}
         JD: "{job_desc_text}"
         CURRENT YEAR: {current_year}
 
         === CANDIDATE CV ===
-        {cv_text[:40000]}
+        {cv_text[:35000]}
 
-        === SCORING INSTRUCTIONS (CRITICAL) ===
-        Rate each category on a scale of **0 to 100**.
-        
-        1. **Relevance (0-100)**: 
-           - How many required hard skills are present? 
-           - Are they backed by project context?
-           - *Example:* 80/100 means strong match but missing 1-2 niche skills.
-        
-        2. **Seniority (0-100)**:
-           - Does experience duration match the role?
-           - Does the candidate show career progression?
-           - *Example:* 100/100 means perfect seniority match. 50/100 means too junior.
+        === INSTRUCTIONS ===
 
-        3. **Quality (0-100)**:
-           - Usage of Action Verbs ("Led", "Built") vs Passive ("Helped").
-           - Usage of Numbers/Metrics ("Improved by 20%").
-           - *Example:* 60/100 means good content but lacks numbers.
+        1. *MANDATORY CHECKS (SMART GATEKEEPER)*:
+           - *Education Degree*: Check minimum degree (S1/D3). Higher degree is PASS. "Student" status is FAIL.
+           - *GPA / IPK (SMART VALIDATION)*:
+             a. Identify Job Scale (Default 4.00 if not stated).
+             b. Identify Candidate Scale (Infer 10.0 if > 4.0).
+             c. Normalize: (Candidate_Val / Candidate_Scale) * Job_Scale.
+             d. Evaluate: Fail if < Required. Pass if not found (with note).
+           - *Relevant Experience*: Count ONLY relevant years. Fail if < Required.
+           - *Major*: Check semantic relevance (e.g. IT == CS).
+
+        2. *SCORING RUBRIC (TOTAL 100.00)*:
+           Rate each category on a scale of 0-100. Do not round up.
+           
+           *A. Hard Skill Relevance (60%)*
+           - How many required hard skills are present & relevant?
+           - Score 0-100 based on coverage & depth.
+           
+           *B. Seniority & Context (20%)*
+           - Does experience duration & role depth match?
+           - Score 0-100.
+
+           *C. Description Quality (20%)*
+           - Use of Action Verbs & Quantitative Metrics ("20% growth").
+           - Score 0-100.
 
         === SKILL ANALYSIS INSTRUCTIONS ===
-        For each required skill, assign a **"Proof Level"**:
-        - **"Strong Evidence"**: Found in Work Experience with context/metrics.
-        - **"Standard Context"**: Found in Work Experience but generic.
-        - **"Listed Only"**: Found in Skills list only.
-        - **"Missing"**: Not found.
+        For each required skill, assign a *"Proof Level"*:
+        - *"Strong Evidence"*: Found in Work Experience with context/metrics.
+        - *"Standard Context"*: Found in Work Experience but generic.
+        - *"Listed Only"*: Found in Skills list only.
+        - *"Missing"*: Not found.
 
-        === OUTPUT JSON FORMAT ===
+        === OUTPUT JSON FORMAT (ENGLISH ONLY) ===
         {{
-            "candidate_summary": "Ringkasan audit CV 2 kalimat (Bahasa Indonesia).",
+            "candidate_summary": "2 sentences summary of candidate potential.",
             "mandatory_checks": {{
-                "gpa": {{ "value": "Angka/Not Listed", "status": "PASS/NOTE" }},
-                "major": {{ "value": "Nama Jurusan", "status": "PASS/FAIL" }},
-                "experience_years": {{ "value": "Angka", "status": "PASS/FAIL" }}
+                "gpa": {{ 
+                    "value": "Original Value", 
+                    "converted_value": "Normalized Value",
+                    "status": "PASS/FAIL/NOTE", 
+                    "reason": "Explanation of conversion or status." 
+                }},
+                "major": {{ "value": "Major Name", "status": "PASS/FAIL", "reason": "..." }},
+                "experience_years": {{ "value": "Number of Years", "status": "PASS/FAIL", "reason": "..." }},
+                "education_level": {{ "value": "Degree Level", "status": "PASS/FAIL", "reason": "..." }}
             }},
             "rubric_scores": {{
                 "relevance_raw": 0.0,  
@@ -108,10 +123,10 @@ class AstraScoringService:
                     "skill": "Skill Name", 
                     "level": "Strong Evidence/Standard Context/Listed Only/Missing", 
                     "score": 10.0, 
-                    "reason": "Saran perbaikan spesifik (Bahasa Indonesia)." 
+                    "reason": "Specific advice to improve this skill section." 
                 }}
             ],
-            "suggestion": "Strategi optimasi utama."
+            "suggestion": "Main strategic advice for the candidate."
         }}
         """
 
@@ -126,20 +141,18 @@ class AstraScoringService:
             )
             result = json.loads(response.text)
 
-            # --- PYTHON CALCULATION (The Real Logic) ---
+            # --- PYTHON CALCULATION ---
             rubric = result.get('rubric_scores', {})
             
-            # Ambil Raw Score (0-100) dari AI
+            # Hitung Bobot
             raw_rel = float(rubric.get('relevance_raw', 0))
             raw_sen = float(rubric.get('seniority_raw', 0))
             raw_qua = float(rubric.get('quality_raw', 0))
 
-            # Hitung Bobot (Weighted Score)
-            weighted_rel = raw_rel * 0.60  # Bobot 60%
-            weighted_sen = raw_sen * 0.20  # Bobot 20%
-            weighted_qua = raw_qua * 0.20  # Bobot 20%
+            weighted_rel = raw_rel * 0.60
+            weighted_sen = raw_sen * 0.20
+            weighted_qua = raw_qua * 0.20
             
-            # Total Score
             final_score = weighted_rel + weighted_sen + weighted_qua
             final_score = min(100.0, final_score)
 
@@ -148,25 +161,36 @@ class AstraScoringService:
             is_failed = False
             fail_reasons = []
             
+            # Cek Fail
+            if mandatory.get('gpa', {}).get('status') == 'FAIL':
+                is_failed = True; fail_reasons.append("GPA Low")
             if mandatory.get('major', {}).get('status') == 'FAIL':
-                is_failed = True; fail_reasons.append("Jurusan Tidak Relevan")
+                is_failed = True; fail_reasons.append("Irrelevant Major")
             if mandatory.get('experience_years', {}).get('status') == 'FAIL':
-                is_failed = True; fail_reasons.append("Pengalaman Kurang")
+                is_failed = True; fail_reasons.append("Experience Short")
+            if mandatory.get('education_level', {}).get('status') == 'FAIL':
+                is_failed = True; fail_reasons.append("Education Mismatch")
 
             if is_failed:
-                final_score = min(final_score, 30.0) # Penalty keras
-                print(f"⛔ GATEKEEPER: Failed due to {fail_reasons}")
+                final_score = min(final_score, 25.0) # Penalty keras
+                print(f"⛔ GATEKEEPER FAILED: {fail_reasons}")
 
             # --- LOGGING TO TERMINAL ---
             print(f"\n📊 RUBRIC CALCULATION:")
-            print(f"   1. Relevansi  (60%): {raw_rel:>5.1f} x 0.6 = {weighted_rel:>5.1f}")
-            print(f"   2. Senioritas (20%): {raw_sen:>5.1f} x 0.2 = {weighted_sen:>5.1f}")
-            print(f"   3. Kualitas   (20%): {raw_qua:>5.1f} x 0.2 = {weighted_qua:>5.1f}")
-            print(f"   ---------------------------------------")
-            print(f"   🏁 FINAL SCORE     : {final_score:>5.1f}%")
+            print(f"   1. Relevance  (60%): {raw_rel:>5.1f} -> {weighted_rel:>5.1f}")
+            print(f"   2. Seniority  (20%): {raw_sen:>5.1f} -> {weighted_sen:>5.1f}")
+            print(f"   3. Quality    (20%): {raw_qua:>5.1f} -> {weighted_qua:>5.1f}")
+            
+            gpa_info = mandatory.get('gpa', {})
+            print(f"\n🎓 GPA CHECK:")
+            print(f"   - Original : {gpa_info.get('value')}")
+            print(f"   - Normalized: {gpa_info.get('converted_value')}")
+            print(f"   - Status   : {gpa_info.get('status')}")
+            
+            print(f"\n🏁 FINAL SCORE : {final_score:.2f}%")
             print("="*70 + "\n")
 
-            # Update result structure untuk frontend (kirim nilai terbobot agar bar chart sesuai)
+            # Update structure for frontend
             result['rubric_scores'] = {
                 "relevance_score": weighted_rel,
                 "seniority_score": weighted_sen,

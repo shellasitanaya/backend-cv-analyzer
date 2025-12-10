@@ -52,53 +52,60 @@ def generate_cv(candidate_id):
         print(f"❌ Failed to generate CV: {e}")
         return jsonify({"error": f"Failed to generate CV: {e}"}), 500
 
-# === [3] Generate CV dari input manual ===
-@cv_bp.route("/generate_custom", methods=["POST", "OPTIONS"])
+@cv_bp.route('generate_custom', methods=['POST'])
 def generate_custom_cv():
-    if request.method == "OPTIONS":
-        return jsonify({"status": "success"}), 200
-        
     try:
-        data = request.get_json()
+        data = request.json
+        print("📥 Received CV generation request")
+        
         if not data:
-            return jsonify({"error": "No data provided"}), 400
-
-        print("🔍 [GENERATE_CUSTOM] Received request")
-        template_name = data.get("template", "modern")
-        use_ai_phrasing = data.get("use_ai_phrasing", True)
-
-        from app.services.cv_generator import build_cv_from_data
+            return jsonify({
+                "success": False,
+                "error": "No data provided"
+            }), 400
         
-        # Get both PDF path and processed data
-        output_path, processed_data = build_cv_from_data(data, template_name, use_ai_phrasing)
+        # Extract parameters
+        template = data.get('template', 'ats-friendly')
+        use_ai_phrasing = data.get('use_ai_phrasing', True)
         
-        # Store processed data in session for editing
-        session['last_cv_data'] = processed_data
-        session['last_template'] = template_name
+        print(f"🔧 Template: {template}, AI Phrasing: {use_ai_phrasing}")
         
-        # Read PDF file and convert to base64 for JSON response
-        with open(output_path, 'rb') as f:
-            pdf_data = f.read()
-        pdf_base64 = base64.b64encode(pdf_data).decode('utf-8')
+        # Generate CV
+        pdf_path, processed_data = build_cv_from_data(
+            data, 
+            template=template, 
+            use_ai_phrasing=use_ai_phrasing
+        )
+        
+        # Read PDF file and convert to base64
+        with open(pdf_path, 'rb') as pdf_file:
+            pdf_bytes = pdf_file.read()
+            pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+        
+        # Clean up temp file
+        try:
+            os.remove(pdf_path)
+        except:
+            pass
+        
+        print("✅ CV generated successfully")
         
         return jsonify({
-            'success': True,
-            'pdf_base64': pdf_base64,
-            'processed_data': processed_data,
-            'improved_with_ai': use_ai_phrasing,
-            'message': 'CV generated successfully'
+            "success": True,
+            "pdf_base64": pdf_base64,
+            "processed_data": processed_data,
+            "message": "CV generated with proper bullet point formatting"
         })
-
+        
     except Exception as e:
-        print(f"❌ [GENERATE_CUSTOM] Error: {str(e)}")
+        print(f"❌ Error generating CV: {str(e)}")
         import traceback
-        error_details = traceback.format_exc()
-        print(f"❌ [GENERATE_CUSTOM] Traceback:\n{error_details}")
+        traceback.print_exc()
         
         return jsonify({
-            "error": "Failed to generate CV",
-            "details": str(e),
-            "type": type(e).__name__
+            "success": False,
+            "error": str(e),
+            "message": "Failed to generate CV"
         }), 500
 
 @cv_bp.route("/get_last_cv_data", methods=["GET"])
