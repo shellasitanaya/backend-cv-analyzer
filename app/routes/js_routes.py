@@ -1,5 +1,6 @@
 # app/routes/js_routes.py
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
+from flask_cors import cross_origin
 from werkzeug.utils import secure_filename
 import os
 import shutil
@@ -15,10 +16,29 @@ from app.extensions import db
 
 js_bp = Blueprint('jobseeker_api', __name__, url_prefix='/api/jobseeker')
 
-UPLOAD_FOLDER = 'temp_uploads'
+# --- [CRITICAL FIX] PATH CONFIGURATION ---
+# File ini ada di: .../backend-cv-analyzer/app/routes/js_routes.py
+
+current_file_path = os.path.abspath(__file__)                # .../app/routes/js_routes.py
+routes_dir = os.path.dirname(current_file_path)              # .../app/routes
+app_dir = os.path.dirname(routes_dir)                        # .../app
+PROJECT_ROOT = os.path.dirname(app_dir)                      # .../backend-cv-analyzer (ROOT PROJECT)
+
+# Folder upload sejajar dengan folder 'app'
+UPLOAD_FOLDER = os.path.join(PROJECT_ROOT, 'temp_uploads')
+PERMANENT_UPLOAD_FOLDER = os.path.join(PROJECT_ROOT, 'user_uploads')
+
+# Pastikan folder ada
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
+if not os.path.exists(PERMANENT_UPLOAD_FOLDER):
+    os.makedirs(PERMANENT_UPLOAD_FOLDER)
 
+print(f"📂 Project Root detected at: {PROJECT_ROOT}")
+print(f"📂 User Uploads target: {PERMANENT_UPLOAD_FOLDER}")
+
+
+# --- 1. ENDPOINT ANALISIS CV ---
 @js_bp.route('/analyze', methods=['POST'])
 @jwt_required()
 def analyze_cv():
@@ -39,6 +59,7 @@ def analyze_cv():
     current_user_id = get_jwt_identity()
     filename = secure_filename(cv_file.filename)
     
+    # Simpan Sementara
     temp_filename = f"{uuid.uuid4()}_{filename}"
     temp_path = os.path.join(UPLOAD_FOLDER, temp_filename)
 
@@ -62,38 +83,42 @@ def analyze_cv():
         # 2. Pendukung Analysis
         ats_results = check_ats_friendliness(cv_text)
         keyword_results = analyze_keywords(cv_text, job_description_text)
-        
-        # [FIX] Real Word Count
-        real_word_count = len(cv_text.split())
-        keyword_results['total_words'] = real_word_count
+        keyword_results['total_words'] = len(cv_text.split())
 
-        # 3. Simpan CV
+        # 3. Pindahkan ke Folder Permanen (user_uploads/uid/...)
         cv_id = str(uuid.uuid4())
-        perm_folder = f"user_uploads/{current_user_id}"
-        os.makedirs(perm_folder, exist_ok=True)
-        perm_path = f"{perm_folder}/{cv_id}_{filename}"
         
-        shutil.move(temp_path, perm_path)
+        # Buat folder khusus user di dalam user_uploads
+        user_folder_path = os.path.join(PERMANENT_UPLOAD_FOLDER, str(current_user_id))
+        if not os.path.exists(user_folder_path):
+            os.makedirs(user_folder_path)
+            
+        # Path tujuan (Absolut di server)
+        final_file_path = os.path.join(user_folder_path, f"{cv_id}_{filename}")
+        
+        # Pindahkan file
+        shutil.move(temp_path, final_file_path)
+
+        # Path Relatif untuk disimpan di Database (Agar bersih)
+        # Format: user_uploads/uid/file.pdf
+        db_relative_path = os.path.join('user_uploads', str(current_user_id), f"{cv_id}_{filename}")
 
         new_cv = CV(
             id=cv_id,
             user_id=current_user_id,
             cv_title=cv_title,
             original_filename=filename,
-            storage_path=perm_path,
+            storage_path=db_relative_path, # Simpan path relatif
             uploaded_at=datetime.utcnow()
         )
         db.session.add(new_cv)
 
-        # 4. Simpan Analysis (FIX ERROR DISINI)
-        # ==========================================
-        analysis_id = str(uuid.uuid4())  # <--- INI YANG KURANG TADI
-        # ==========================================
-        
+        # 4. Simpan Analysis
+        analysis_id = str(uuid.uuid4())
         full_job_desc_stored = f"{job_title_input}\n\n{job_description_text}"
 
         new_analysis = Analysis(
-            id=analysis_id, # Pakai variabel yang sudah didefinisikan
+            id=analysis_id,
             cv_id=cv_id,
             job_description_text=full_job_desc_stored,
             match_score=gemini_result.get('skor_akhir', 0),
@@ -107,7 +132,7 @@ def analyze_cv():
 
         return jsonify({
             "status": "success",
-            "analysis_id": analysis_id, # Sekarang variabel ini dikenali
+            "analysis_id": analysis_id,
             "match_score": gemini_result.get('skor_akhir', 0),
             "gemini_result": gemini_result,
             "keyword_analysis": keyword_results,
@@ -122,8 +147,57 @@ def analyze_cv():
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
-# (Sisa endpoint GET/DELETE di bawahnya biarkan sama, tidak ada yang berubah logicnya)
-# Copy paste dari file sebelumnya jika perlu, atau biarkan saja kalau Anda sudah punya
+
+# --- 2. ENDPOINT PREVIEW CV (DIPERBAIKI) ---
+@js_bp.route('/cv/preview/<cv_id>', methods=['GET'])
+@cross_origin()
+@jwt_required()
+def preview_cv(cv_id):
+    current_user_id = get_jwt_identity()
+    
+    cv = CV.query.filter_by(id=cv_id, user_id=current_user_id).first()
+    
+    if not cv:
+        return jsonify({"error": "Data CV tidak ditemukan di database."}), 404
+
+    # --- LOGIKA PENCARIAN FILE ---
+    # Database menyimpan: 'user_uploads/uid/file.pdf'
+    # Kita gabung dengan PROJECT_ROOT: 'C:/.../backend/user_uploads/uid/file.pdf'
+    
+    full_path = os.path.join(PROJECT_ROOT, cv.storage_path)
+
+    # Debugging: Cetak path yang dicari ke terminal server
+    print(f"🔍 REQUEST PREVIEW: Mencari file di: {full_path}")
+
+    if not os.path.exists(full_path):
+        # Fallback: Coba cari tanpa folder user_uploads (jika di DB sudah absolute atau salah format)
+        fallback_path = os.path.join(PROJECT_ROOT, 'user_uploads', os.path.basename(cv.storage_path))
+        if os.path.exists(fallback_path):
+            full_path = fallback_path
+        else:
+            print(f"❌ GAGAL: File fisik tidak ditemukan.")
+            return jsonify({"error": "File fisik tidak ditemukan di server.", "path_searched": full_path}), 404
+
+    mimetype = 'application/pdf'
+    lower_filename = cv.original_filename.lower()
+    
+    if lower_filename.endswith('.docx'):
+        mimetype = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    elif lower_filename.endswith('.doc'):
+        mimetype = 'application/msword'
+    
+    response = send_file(
+        full_path,
+        mimetype=mimetype,
+        as_attachment=False, 
+        download_name=cv.original_filename
+    )
+    # Cache control agar browser tidak menyimpan versi lama
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
+
+
+# --- 3. ENDPOINT GET HISTORY ---
 @js_bp.route('/my-cvs', methods=['GET'])
 @jwt_required()
 def get_my_cvs():
@@ -164,6 +238,8 @@ def get_my_cvs():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+# --- 4. ENDPOINT GET DETAIL ---
 @js_bp.route('/analysis/<analysis_id>', methods=['GET'])
 @jwt_required()
 def get_analysis_detail(analysis_id):
@@ -187,13 +263,18 @@ def get_analysis_detail(analysis_id):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+# --- 5. ENDPOINT DELETE ---
 @js_bp.route('/cv/<cv_id>', methods=['DELETE'])
 @jwt_required()
 def delete_cv(cv_id):
     cv = CV.query.get(cv_id)
     if cv:
-        if os.path.exists(cv.storage_path):
-            os.remove(cv.storage_path)
+        # Hapus file fisik
+        full_path = os.path.join(PROJECT_ROOT, cv.storage_path)
+        if os.path.exists(full_path):
+            os.remove(full_path)
+            
         db.session.delete(cv)
         db.session.commit()
         return jsonify({"status": "success"}), 200

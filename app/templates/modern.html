@@ -2,240 +2,95 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>{{ candidate.extracted_name or candidate.personal_info.full_name or "Candidate" }} - CV</title>
+    <title>CV</title>
     <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            line-height: 1.6; 
-            margin: 40px; 
-            max-width:800px; 
-            margin-left:auto; 
-            margin-right:auto; 
+        body { font-family: 'Segoe UI', sans-serif; line-height: 1.6; margin: 40px auto; max-width: 800px; color: #333; }
+        header { border-bottom: 2px solid #000; padding-bottom: 15px; margin-bottom: 30px; }
+        h1 { margin: 0; font-size: 32px; font-weight: 800; text-transform: uppercase; }
+        .contact { margin-top: 5px; color: #666; font-size: 0.9em; }
+        
+        .section { margin-bottom: 30px; }
+        .sec-head { 
+            display: flex; justify-content: space-between; align-items: center;
+            font-weight: 800; font-size: 14px; text-transform: uppercase; 
+            border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px; 
         }
-        header { 
-            text-align:center; 
-            margin-bottom:30px; 
-        }
-        h1 { 
-            margin:0; 
-            font-size:24px; 
-            letter-spacing:1px; 
-        }
-        .contact-info { 
-            margin-top:6px; 
-            color:#555; 
-            font-size:0.95em; 
-        }
-        .section { 
-            margin-top:28px; 
-        }
-        /* HAPUS border-bottom dari h2 dan pindahkan ke section-header */
-        h2 { 
-            text-transform:uppercase; 
-            /* HAPUS: border-bottom:2px solid #333; */
-            padding-bottom:0; /* HAPUS padding bottom */
-            margin-bottom:0; /* HAPUS margin bottom */
-            font-size:14px; 
-        }
-        .entry { 
-            margin-bottom:18px; 
-        }
-        .entry-header { 
-            display:flex; 
-            justify-content:space-between; 
-            align-items:baseline; 
-            gap:12px; 
-        }
-        .entry-header h3 { 
-            margin:0; 
-            font-size:16px; 
-        }
-        .entry-header .date { 
-            color:#555; 
-            font-weight:600; 
-            white-space: nowrap; 
-        }
-        .entry-subheader { 
-            font-weight:600; 
-            margin-top:6px; 
-            margin-bottom:8px; 
-            color:#444; 
-        }
-        ul { 
-            padding-left:20px; 
-            margin-top:6px; 
-        }
-        li { 
-            margin-bottom:6px; 
-        }
-        .section-header-container {
-            margin-bottom: 12px;
-        }
-        .section-header-with-gpa {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px; /* Kurangi margin bottom */
-        }
-        .gpa-header {
-            color: #555; /* Ubah warna agar match dengan template modern */
-            font-size: 14px;
-            font-weight: 600; /* Match dengan style modern */
-        }
-        /* TAMBAHKIN style untuk divider yang memanjang penuh */
-        .section-divider {
-            border-bottom: 2px solid #333;
-            width: 100%;
-        }
+        .gpa { padding: 2px 6px; font-size: 14px; }
+
+        .item { margin-bottom: 20px; }
+        .item-head { display: flex; justify-content: space-between; font-weight: 700; font-size: 16px; }
+        .item-sub { font-weight: 600; color: #555; font-size: 14px; margin-bottom: 5px; }
+        
+        /* SKILL GRID */
+        .skill-list { list-style: none; padding: 0; }
+        .skill-row { margin-bottom: 10px; border-left: 3px solid #333; padding-left: 10px; }
+        .skill-n { font-weight: bold; display: block; }
+        .skill-d { font-size: 0.9em; color: #555; }
     </style>
 </head>
 <body>
     <header>
-        <h1>{{ candidate.extracted_name or candidate.personal_info.full_name }}</h1>
-        <p class="contact-info">
-            {% if candidate.personal_info %}
-                {{ candidate.personal_info.email or candidate.extracted_email or '' }}
-                {% if candidate.personal_info.phone_number %} | {{ candidate.personal_info.phone_number }}{% elif candidate.extracted_phone %} | {{ candidate.extracted_phone }}{% endif %}
-                {% if candidate.personal_info.linkedin_url %} | {{ candidate.personal_info.linkedin_url }}{% endif %}
-            {% else %}
-                {{ candidate.extracted_email or '' }} {% if candidate.extracted_phone %} | {{ candidate.extracted_phone }}{% endif %}
-            {% endif %}
-        </p>
+        <h1>{{ candidate.extracted_name }}</h1>
+        <div class="contact">
+            {{ candidate.email }} | {{ candidate.phone }}
+            {% if candidate.linkedin %} | {{ candidate.linkedin }}{% endif %}
+            {% if candidate.portfolio %} | {{ candidate.portfolio }}{% endif %}
+        </div>
     </header>
 
- {% if candidate.summary %}
-<div class="section">
-    <div class="section-header-container">
-        <h2>Professional Summary</h2>
-        <div class="section-divider"></div>
-    </div>
-    {% if candidate.summary is string %}
-        <p>{{ candidate.summary }}</p>
-    {% elif candidate.summary is iterable %}
-        {% for line in candidate.summary %}
-            {% if line and line|string|trim %}<p>{{ line }}</p>{% endif %}
-        {% endfor %}
-    {% else %}
-        <p>{{ candidate.summary }}</p>
-    {% endif %}
-</div>
-{% endif %}
-
-    {% if candidate.work_experience and candidate.work_experience|length > 0 %}
-<div class="section">
-    <div class="section-header-container">
-        <h2>Work Experience</h2>
-        <div class="section-divider"></div>
-    </div>
-    {% for exp in candidate.work_experience %}
-            <div class="entry">
-                <div class="entry-header">
-                    <h3>
-                        {% if exp.job_title and exp.job_title.strip() %}
-                            {{ exp.job_title }}
-                        {% else %}
-                            Professional Experience
-                        {% endif %}
-                    </h3>
-                    {% if exp.start_date or exp.end_date %}
-                    <span class="date">
-                        {% if exp.start_date %}{{ exp.start_date }}{% endif %}
-                        {% if exp.start_date and exp.end_date %} – {% endif %}
-                        {% if exp.end_date %}{{ exp.end_date }}{% endif %}
-                    </span>
-                    {% endif %}
-                </div>
-                
-                {% if exp.company_name and exp.company_name.strip() %}
-                <div class="entry-subheader">
-                    {{ exp.company_name }}
-                </div>
-                {% endif %}
-                
-                {% if exp.description %}
-                    {% if exp.description is string %}
-                        <ul>
-                            {% for line in exp.description.split('\n') %}
-                                {% if line and line.strip() %}
-                                    <li>{{ line.strip() }}</li>
-                                {% endif %}
-                            {% endfor %}
-                        </ul>
-                    {% elif exp.description is iterable %}
-                        <ul>
-                            {% for point in exp.description %}
-                                {% if point and point|string|trim %}
-                                    <li>{{ point }}</li>
-                                {% endif %}
-                            {% endfor %}
-                        </ul>
-                    {% else %}
-                        <p>{{ exp.description }}</p>
-                    {% endif %}
-                {% endif %}
-            </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-{% if candidate.education and candidate.education|length > 0 %}
-<div class="section">
-    <div class="section-header-container">
-        <div class="section-header-with-gpa">
-            <h2>Education</h2>
-            {% if candidate.education[0].gpa and candidate.education[0].gpa.strip() %}
-                <div class="gpa-header">GPA: {{ candidate.education[0].gpa }}</div>
-            {% endif %}
-        </div>
-        <div class="section-divider"></div>
-    </div>
-    {% for edu in candidate.education %}
-        <div class="entry">
-            <div class="entry-header">
-                <h3>
-                    {% if edu.degree and edu.degree.strip() %}
-                        {{ edu.degree }}
-                    {% else %}
-                        Education
-                    {% endif %}
-                </h3>
-                {% if edu.graduation_year and edu.graduation_year.strip() %}
-                <div class="date">{{ edu.graduation_year }}</div>
-                {% endif %}
-            </div>
-            <div class="entry-subheader">
-                {% if edu.university and edu.university.strip() %}
-                    {{ edu.university }}
-                {% endif %}
-                {% if edu.major and edu.major.strip() %} - {{ edu.major }}{% endif %}
-            </div>
-        </div>
-    {% endfor %}
-</div>
-{% endif %}
-
+    {% if candidate.summary %}
     <div class="section">
-    <div class="section-header-container">
-        <h2>Skills</h2>
-        <div class="section-divider"></div>
-        <ul>
-            {% if candidate.skills is string %}
-                {% for s in candidate.skills.split(',') %}
-                    {% if s and s|trim %}<li>{{ s|trim }}</li>{% endif %}
-                {% endfor %}
-            {% elif candidate.skills is mapping %}
-                {% for s in candidate.skills.hard_skills %}
-                    {% if s %}<li>{{ s }}</li>{% endif %}
-                {% endfor %}
-            {% elif candidate.structured_profile_json and candidate.structured_profile_json.get('hard_skills') %}
-                {% for s in candidate.structured_profile_json.get('hard_skills') %}
-                    <li>{{ s }}</li>
-                {% endfor %}
-            {% else %}
-                <li>No skills provided</li>
-            {% endif %}
+        <div class="sec-head">Summary</div>
+        <p>{{ candidate.summary }}</p>
+    </div>
+    {% endif %}
+
+    {% if candidate.work_experience %}
+    <div class="section">
+        <div class="sec-head">Experience</div>
+        {% for exp in candidate.work_experience %}
+            <div class="item">
+                <div class="item-head">
+                    <span>{{ exp.job_title }}</span>
+                    <span style="font-weight: 400; font-size: 0.9em; color: #666;">{{ exp.start_date }} - {{ exp.end_date }}</span>
+                </div>
+                <div class="item-sub">{{ exp.company_name }}</div>
+                <p>{{ exp.description }}</p>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if candidate.education %}
+    <div class="section">
+        <div class="sec-head">
+            Education
+            {% if candidate.education[0].gpa %}<span class="gpa">GPA: {{ candidate.education[0].gpa }}</span>{% endif %}
+        </div>
+        {% for edu in candidate.education %}
+            <div class="item">
+                <div class="item-head">
+                    <span>{{ edu.degree }}</span>
+                    <span style="font-weight: 400;">{{ edu.graduation_year }}</span>
+                </div>
+                <div class="item-sub">{{ edu.university }}, {{ edu.major }}</div>
+            </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if candidate.skills_list %}
+    <div class="section">
+        <div class="sec-head">Skills</div>
+        <ul class="skill-list">
+            {% for skill in candidate.skills_list %}
+                <li class="skill-row">
+                    <span class="skill-n">{{ skill.name }} {% if skill.year %}<span style="font-weight:400; color:#777;">({{ skill.year }})</span>{% endif %}</span>
+                    <span class="skill-d">{{ skill.description or skill.elaboration}}</span>
+                </li>
+            {% endfor %}
         </ul>
     </div>
+    {% endif %}
 </body>
 </html>

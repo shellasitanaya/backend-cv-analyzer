@@ -1,3 +1,4 @@
+# __init__.py - UPDATED VERSION
 from flask import Flask
 from config import Config
 from pymysql import connect
@@ -11,13 +12,10 @@ from .routes.astra_routes import astra_bp
 from app.database.seed.seed_all import seed_all  
 from .routes.experience import experience_bp
 from .routes.skills import skills_bp
-
+from .services.ai_phrasing import ai_phrasing_bp
 
 def create_app():
     app = Flask(__name__)
-    # app.config.from_object(Config) 
-    # cors.init_app(app) # Mengaktifkan CORS untuk semua rute
-    # CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
     app.config.from_object(Config)
 
     # Allow CORS from React
@@ -26,7 +24,6 @@ def create_app():
             "origins": "http://localhost:3000",
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "Accept"],
-            # "supports_credentials": True
         }
     })
     
@@ -38,13 +35,20 @@ def create_app():
     jwt.init_app(app)
     bcrypt.init_app(app)
 
+    # Register blueprints - CLEAR URL STRUCTURE
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(hr_bp, url_prefix="/api/hr")
     app.register_blueprint(js_bp, url_prefix="/api/jobseeker")
+    
+    # CV-related routes under /api/cv
     app.register_blueprint(cv_bp, url_prefix="/api/cv")
+    app.register_blueprint(skills_bp, url_prefix="/api/cv/skills")
+    app.register_blueprint(experience_bp, url_prefix="/api/cv/experience")
+    
+    # AI phrasing under /api/ai (separate from CV)
+    app.register_blueprint(ai_phrasing_bp, url_prefix="/api/ai")
+    
     app.register_blueprint(astra_bp, url_prefix="/api/astra")
-    app.register_blueprint(skills_bp) 
-    app.register_blueprint(experience_bp)  
 
     app.cli.add_command(seed_all)
 
