@@ -66,7 +66,7 @@ def generate_custom_cv():
         
         # Extract parameters
         template = data.get('template', 'ats-friendly')
-        use_ai_phrasing = data.get('use_ai_phrasing', True)
+        use_ai_phrasing = data.get('use_ai_phrasing', False)
         
         print(f"🔧 Template: {template}, AI Phrasing: {use_ai_phrasing}")
         

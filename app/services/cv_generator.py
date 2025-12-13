@@ -528,20 +528,6 @@ def build_cv_from_data(data, template="modern", use_ai_phrasing=True):
         if summary_text:
             summary_text = ai_cv_generator._ensure_bullet_formatting(summary_text)
 
-        # 6. Apply AI Phrasing (Optional)
-        candidate_data = {
-            "name": name,
-            "summary": summary_text,
-            "work_experience": work_experience,
-        }
-        
-        if use_ai_phrasing:
-            try:
-                candidate_data = ai_cv_generator.apply_ai_phrasing(candidate_data)
-                summary_text = candidate_data.get('summary', summary_text)
-                work_experience = candidate_data.get('work_experience', work_experience)
-            except Exception as e:
-                print(f"⚠️ AI Error (non-fatal): {e}")
 
         # 7. KONVERSI KE HTML LIST UNTUK PDF
         final_summary_html = ai_cv_generator._convert_to_html_list(summary_text)
