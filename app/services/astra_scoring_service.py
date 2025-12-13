@@ -15,13 +15,15 @@ GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GENAI_API_KEY:
     genai.configure(api_key=GENAI_API_KEY)
 else:
-    print("\033[91m⚠️ FATAL ERROR: GEMINI_API_KEY tidak ditemukan di file .env\033[0m")
+    print("\033[91m⚠ FATAL ERROR: GEMINI_API_KEY tidak ditemukan di file .env\033[0m")
 
 def get_best_available_model():
     """Auto-detect model terbaik."""
     try:
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         priority_list = [
+            'models/gemini-2.5-flash', 
+            'models/gemini-2.0-flash', 
             'models/gemini-2.5-flash', 
             'models/gemini-2.0-flash', 
             'models/gemini-1.5-pro',
@@ -37,6 +39,8 @@ class AstraScoringService:
     """
     Service penilaian CV dengan Smart GPA Validation, Rubrik 60/20/20, dan Gatekeeper.
     Output: ALWAYS ENGLISH.
+    Service penilaian CV dengan Smart GPA Validation, Rubrik 60/20/20, dan Gatekeeper.
+    Output: ALWAYS ENGLISH.
     """
 
     @staticmethod
@@ -48,8 +52,10 @@ class AstraScoringService:
         # --- LOGGING ---
         print("\n" + "="*70)
         print(f"🚀 [ASTRA SMART ANALYZER] Processing: {job_title}")
+        print(f"🚀 [ASTRA SMART ANALYZER] Processing: {job_title}")
         print("="*70)
 
+        # --- PROMPT: ALWAYS ENGLISH ---
         # --- PROMPT: ALWAYS ENGLISH ---
         prompt = f"""
         Act as a Global Senior Recruiter & Career Coach.
@@ -63,6 +69,7 @@ class AstraScoringService:
         CURRENT YEAR: {current_year}
 
         === CANDIDATE CV ===
+        {cv_text[:35000]}
         {cv_text[:35000]}
 
         === INSTRUCTIONS ===
@@ -93,16 +100,27 @@ class AstraScoringService:
            - Score 0-100.
 
         === SKILL ANALYSIS INSTRUCTIONS ===
-        For each required skill, assign a **"Proof Level"**:
-        - **"Strong Evidence"**: Found in Work Experience with context/metrics.
-        - **"Standard Context"**: Found in Work Experience but generic.
-        - **"Listed Only"**: Found in Skills list only.
-        - **"Missing"**: Not found.
+        For each required skill, assign a *"Proof Level"*:
+        - *"Strong Evidence"*: Found in Work Experience with context/metrics.
+        - *"Standard Context"*: Found in Work Experience but generic.
+        - *"Listed Only"*: Found in Skills list only.
+        - *"Missing"*: Not found.
 
+        === OUTPUT JSON FORMAT (ENGLISH ONLY) ===
         === OUTPUT JSON FORMAT (ENGLISH ONLY) ===
         {{
             "candidate_summary": "2 sentences summary of candidate potential.",
+            "candidate_summary": "2 sentences summary of candidate potential.",
             "mandatory_checks": {{
+                "gpa": {{ 
+                    "value": "Original Value", 
+                    "converted_value": "Normalized Value",
+                    "status": "PASS/FAIL/NOTE", 
+                    "reason": "Explanation of conversion or status." 
+                }},
+                "major": {{ "value": "Major Name", "status": "PASS/FAIL", "reason": "..." }},
+                "experience_years": {{ "value": "Number of Years", "status": "PASS/FAIL", "reason": "..." }},
+                "education_level": {{ "value": "Degree Level", "status": "PASS/FAIL", "reason": "..." }}
                 "gpa": {{ 
                     "value": "Original Value", 
                     "converted_value": "Normalized Value",
@@ -124,8 +142,10 @@ class AstraScoringService:
                     "level": "Strong Evidence/Standard Context/Listed Only/Missing", 
                     "score": 10.0, 
                     "reason": "Specific advice to improve this skill section." 
+                    "reason": "Specific advice to improve this skill section." 
                 }}
             ],
+            "suggestion": "Main strategic advice for the candidate."
             "suggestion": "Main strategic advice for the candidate."
         }}
         """
@@ -142,13 +162,18 @@ class AstraScoringService:
             result = json.loads(response.text)
 
             # --- PYTHON CALCULATION ---
+            # --- PYTHON CALCULATION ---
             rubric = result.get('rubric_scores', {})
             
+            # Hitung Bobot
             # Hitung Bobot
             raw_rel = float(rubric.get('relevance_raw', 0))
             raw_sen = float(rubric.get('seniority_raw', 0))
             raw_qua = float(rubric.get('quality_raw', 0))
 
+            weighted_rel = raw_rel * 0.60
+            weighted_sen = raw_sen * 0.20
+            weighted_qua = raw_qua * 0.20
             weighted_rel = raw_rel * 0.60
             weighted_sen = raw_sen * 0.20
             weighted_qua = raw_qua * 0.20
