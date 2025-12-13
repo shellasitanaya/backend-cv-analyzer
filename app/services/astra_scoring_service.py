@@ -15,15 +15,13 @@ GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GENAI_API_KEY:
     genai.configure(api_key=GENAI_API_KEY)
 else:
-    print("\033[91m⚠ FATAL ERROR: GEMINI_API_KEY tidak ditemukan di file .env\033[0m")
+    print("\033[91m⚠️ FATAL ERROR: GEMINI_API_KEY not found in .env file\033[0m") 
 
 def get_best_available_model():
     """Auto-detect model terbaik."""
     try:
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         priority_list = [
-            'models/gemini-2.5-flash', 
-            'models/gemini-2.0-flash', 
             'models/gemini-2.5-flash', 
             'models/gemini-2.0-flash', 
             'models/gemini-1.5-pro',
@@ -39,8 +37,6 @@ class AstraScoringService:
     """
     Service penilaian CV dengan Smart GPA Validation, Rubrik 60/20/20, dan Gatekeeper.
     Output: ALWAYS ENGLISH.
-    Service penilaian CV dengan Smart GPA Validation, Rubrik 60/20/20, dan Gatekeeper.
-    Output: ALWAYS ENGLISH.
     """
 
     @staticmethod
@@ -51,12 +47,10 @@ class AstraScoringService:
 
         # --- LOGGING ---
         print("\n" + "="*70)
-        print(f"🚀 [ASTRA SMART ANALYZER] Processing: {job_title}")
-        print(f"🚀 [ASTRA SMART ANALYZER] Processing: {job_title}")
+        print(f"🚀 [AI SMART ANALYZER] Processing: {job_title}")
         print("="*70)
 
-        # --- PROMPT: ALWAYS ENGLISH ---
-        # --- PROMPT: ALWAYS ENGLISH ---
+        # --- PROMPT: ADAPTIVE LOGIC (INTERN vs PRO) ---
         prompt = f"""
         Act as a Global Senior Recruiter & Career Coach.
         Your goal is to evaluate the candidate based on specific criteria with HIGH PRECISION.
@@ -69,67 +63,52 @@ class AstraScoringService:
         CURRENT YEAR: {current_year}
 
         === CANDIDATE CV ===
-        {cv_text[:35000]}
-        {cv_text[:35000]}
+        {cv_text[:45000]}
 
         === INSTRUCTIONS ===
 
         1. **MANDATORY CHECKS (SMART GATEKEEPER)**:
-           - **Education Degree**: Check minimum degree (S1/D3). Higher degree is PASS. "Student" status is FAIL.
-           - **GPA / IPK (SMART VALIDATION)**:
-             a. Identify Job Scale (Default 4.00 if not stated).
+           - **Education Degree**: Check minimum degree. Higher degree is PASS. 
+             **CRITICAL STUDENT RULE:** If position is 'Intern', 'Magang', 'Trainee' -> Active Student status is **PASS**.
+             If position is 'Full-time'/'Senior' -> Active Student status is **FAIL**.
+           - **GPA / IPK**:
+             a. Identify Job Scale (Default 4.00).
              b. Identify Candidate Scale (Infer 10.0 if > 4.0).
-             c. Normalize: (Candidate_Val / Candidate_Scale) * Job_Scale.
-             d. Evaluate: Fail if < Required. Pass if not found (with note).
-           - **Relevant Experience**: Count ONLY relevant years. Fail if < Required.
-           - **Major**: Check semantic relevance (e.g. IT == CS).
+             c. Normalize.
+             d. Evaluate: Fail if < Required. Pass if not found.
+           - **Experience**: Fail only if Actual < Required.
 
         2. **SCORING RUBRIC (TOTAL 100.00)**:
-           *Rate each category on a scale of 0-100. Do not round up.*
+           *Rate each category on a scale of 0-100.*
            
            **A. Hard Skill Relevance (60%)**
-           - How many required hard skills are present & relevant?
-           - Score 0-100 based on coverage & depth.
+           - Does the candidate have the tools/tech stack required? 
+           - For Interns: Coursework/Projects count as valid skill proof.
            
-           **B. Seniority & Context (20%)**
-           - Does experience duration & role depth match?
-           - Score 0-100.
+           **B. Seniority & Experience (20%) - CONTEXT AWARE:**
+           - **IF INTERN/JUNIOR ROLE:** Do NOT look for years of work. Look for: Organizational experience, Projects, Competitions, or Previous Internships. 
+             (Score 90-100 if they have strong projects/org experience).
+           - **IF SENIOR ROLE:** Look for years of professional experience matching the JD.
 
            **C. Description Quality (20%)**
-           - Use of Action Verbs & Quantitative Metrics ("20% growth").
-           - Score 0-100.
+           - Use of Action Verbs & Numbers.
+           - For Interns: "Managed event budget" or "Led student team" counts as metrics.
 
         === SKILL ANALYSIS INSTRUCTIONS ===
-        For each required skill, assign a *"Proof Level"*:
-        - *"Strong Evidence"*: Found in Work Experience with context/metrics.
-        - *"Standard Context"*: Found in Work Experience but generic.
-        - *"Listed Only"*: Found in Skills list only.
-        - *"Missing"*: Not found.
+        For each required skill, assign a **"Proof Level"**:
+        - **"Strong Evidence"**: Found in Work Experience OR **Academic Projects** with context.
+        - **"Standard Context"**: Found but generic.
+        - **"Listed Only"**: Found in list only.
+        - **"Missing"**: Not found.
 
         === OUTPUT JSON FORMAT (ENGLISH ONLY) ===
-        === OUTPUT JSON FORMAT (ENGLISH ONLY) ===
         {{
-            "candidate_summary": "2 sentences summary of candidate potential.",
-            "candidate_summary": "2 sentences summary of candidate potential.",
+            "candidate_summary": "2 sentences summary.",
             "mandatory_checks": {{
-                "gpa": {{ 
-                    "value": "Original Value", 
-                    "converted_value": "Normalized Value",
-                    "status": "PASS/FAIL/NOTE", 
-                    "reason": "Explanation of conversion or status." 
-                }},
+                "gpa": {{ "value": "Original", "converted_value": "Normalized", "status": "PASS/FAIL/NOTE", "reason": "..." }},
                 "major": {{ "value": "Major Name", "status": "PASS/FAIL", "reason": "..." }},
-                "experience_years": {{ "value": "Number of Years", "status": "PASS/FAIL", "reason": "..." }},
-                "education_level": {{ "value": "Degree Level", "status": "PASS/FAIL", "reason": "..." }}
-                "gpa": {{ 
-                    "value": "Original Value", 
-                    "converted_value": "Normalized Value",
-                    "status": "PASS/FAIL/NOTE", 
-                    "reason": "Explanation of conversion or status." 
-                }},
-                "major": {{ "value": "Major Name", "status": "PASS/FAIL", "reason": "..." }},
-                "experience_years": {{ "value": "Number of Years", "status": "PASS/FAIL", "reason": "..." }},
-                "education_level": {{ "value": "Degree Level", "status": "PASS/FAIL", "reason": "..." }}
+                "experience_years": {{ "value": "Years", "status": "PASS/FAIL", "reason": "..." }},
+                "education_level": {{ "value": "Level", "status": "PASS/FAIL", "reason": "..." }}
             }},
             "rubric_scores": {{
                 "relevance_raw": 0.0,  
@@ -137,22 +116,15 @@ class AstraScoringService:
                 "quality_raw": 0.0
             }},
             "skills_analysis": [
-                {{ 
-                    "skill": "Skill Name", 
-                    "level": "Strong Evidence/Standard Context/Listed Only/Missing", 
-                    "score": 10.0, 
-                    "reason": "Specific advice to improve this skill section." 
-                    "reason": "Specific advice to improve this skill section." 
-                }}
+                {{ "skill": "Name", "level": "Strong Evidence/Standard Context/Listed Only/Missing", "score": 10.0, "reason": "Advice." }}
             ],
-            "suggestion": "Main strategic advice for the candidate."
-            "suggestion": "Main strategic advice for the candidate."
+            "suggestion": "Advice."
         }}
         """
 
         try:
             model_name = get_best_available_model()
-            print(f"🤖 Using Model: {model_name}")
+            print(f"Using Model: {model_name}")
             model = genai.GenerativeModel(model_name)
             
             response = model.generate_content(
@@ -162,18 +134,13 @@ class AstraScoringService:
             result = json.loads(response.text)
 
             # --- PYTHON CALCULATION ---
-            # --- PYTHON CALCULATION ---
             rubric = result.get('rubric_scores', {})
             
-            # Hitung Bobot
             # Hitung Bobot
             raw_rel = float(rubric.get('relevance_raw', 0))
             raw_sen = float(rubric.get('seniority_raw', 0))
             raw_qua = float(rubric.get('quality_raw', 0))
 
-            weighted_rel = raw_rel * 0.60
-            weighted_sen = raw_sen * 0.20
-            weighted_qua = raw_qua * 0.20
             weighted_rel = raw_rel * 0.60
             weighted_sen = raw_sen * 0.20
             weighted_qua = raw_qua * 0.20
@@ -186,19 +153,18 @@ class AstraScoringService:
             is_failed = False
             fail_reasons = []
             
-            # Cek Fail
             if mandatory.get('gpa', {}).get('status') == 'FAIL':
-                is_failed = True; fail_reasons.append("GPA Low")
+                is_failed = True; fail_reasons.append("Low GPA")
             if mandatory.get('major', {}).get('status') == 'FAIL':
                 is_failed = True; fail_reasons.append("Irrelevant Major")
             if mandatory.get('experience_years', {}).get('status') == 'FAIL':
-                is_failed = True; fail_reasons.append("Experience Short")
+                is_failed = True; fail_reasons.append("Insufficient Experience")
             if mandatory.get('education_level', {}).get('status') == 'FAIL':
-                is_failed = True; fail_reasons.append("Education Mismatch")
+                is_failed = True; fail_reasons.append("Education Level Mismatch")
 
             if is_failed:
-                final_score = min(final_score, 25.0) # Penalty keras
-                print(f"⛔ GATEKEEPER FAILED: {fail_reasons}")
+                final_score = min(final_score, 25.0) # Penalty
+                print(f"⛔ GATEKEEPER FAILED (Score Capped): {', '.join(fail_reasons)}")
 
             # --- LOGGING TO TERMINAL ---
             print(f"\n📊 RUBRIC CALCULATION:")
@@ -208,9 +174,7 @@ class AstraScoringService:
             
             gpa_info = mandatory.get('gpa', {})
             print(f"\n🎓 GPA CHECK:")
-            print(f"   - Original : {gpa_info.get('value')}")
-            print(f"   - Normalized: {gpa_info.get('converted_value')}")
-            print(f"   - Status   : {gpa_info.get('status')}")
+            print(f"   - Status   : {gpa_info.get('status')} ({gpa_info.get('value')})")
             
             print(f"\n🏁 FINAL SCORE : {final_score:.2f}%")
             print("="*70 + "\n")
