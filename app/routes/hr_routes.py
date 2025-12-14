@@ -20,7 +20,7 @@ from app.services.ai_analyzer import (
 )
 from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
 import app.databases as databases
-from app.services.talent_search import search_candidate
+from app.services.talent_search import search_candidates
 from werkzeug.utils import secure_filename
 from flask import jsonify, request
 
