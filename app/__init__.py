@@ -13,6 +13,7 @@ from app.database.seed.seed_all import seed_all
 from .routes.experience import experience_bp
 from .routes.skills import skills_bp
 from .services.ai_phrasing import ai_phrasing_bp
+from .routes.hr_routes import candidate_bp
 
 def create_app():
     app = Flask(__name__)
@@ -49,6 +50,9 @@ def create_app():
     app.register_blueprint(ai_phrasing_bp, url_prefix="/api/ai")
     
     app.register_blueprint(astra_bp, url_prefix="/api/astra")
+
+    # candidate route
+    app.register_blueprint(candidate_bp)
 
     app.cli.add_command(seed_all)
 

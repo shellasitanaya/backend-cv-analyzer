@@ -1,18 +1,15 @@
-# filename: backend-cv-analyzer/app/routes/hr_routes.py
-
 from flask import Blueprint, request, jsonify
 from werkzeug.utils import secure_filename
 from flask_jwt_extended import (
     jwt_required,
     get_jwt_identity,
-    verify_jwt_in_request,
-    get_jwt,
 )
 import os
 import json
 import pprint
+from app.extensions import db
 from app.models import Job
-
+from app.models import Candidate, CandidateSkill, Skill
 from app.services.cv_parser import extract_text
 from app.services.ai_analyzer import (
     parse_candidate_info,
@@ -21,35 +18,21 @@ from app.services.ai_analyzer import (
     BUSINESS_ANALYST_SKILLS,
     DATA_ENGINEER_SKILLS,
 )
-from app.extensions import db
+from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
 import app.databases as databases
-from app.services.talent_search import search_candidates
+from app.services.talent_search import search_candidate
+from werkzeug.utils import secure_filename
+from flask import jsonify, request
+
+
 
 
 hr_bp = Blueprint("hr_api", __name__, url_prefix="/api/hr")
-
-# ensure every single endpoint's request have jwt
-# @hr_bp.before_request
-# def require_jwt_for_all_hr_routes():
-#     # ✅ Ensure JWT is present and valid
-#     verify_jwt_in_request(optional=False)
-
-#     # ✅ Now safe to access JWT claims
-#     claims = get_jwt()
-#     role = claims.get("role")
-
-#     if role != "hr":
-#         return {"message": "Unauthorized"}, 403
+candidate_bp = Blueprint('candidate', __name__, url_prefix='/api/candidates')
 
 UPLOAD_FOLDER = "temp_uploads"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
-
-import os
-import json
-from werkzeug.utils import secure_filename
-from flask import jsonify, request
-
 
 # upload and process multiple CVs (bulk upload) -> terima dari front
 @hr_bp.route("/jobs/<job_id>/upload", methods=["POST"])
@@ -305,11 +288,29 @@ def search_candidates_endpoint():
         }), 500
 
 # Endpoint untuk profil detail (lakukan hal yang sama)
-@hr_bp.route("/candidates/<candidate_id>", methods=["GET"])
-def get_candidate_detail(candidate_id):
-    # Di sini Anda akan membuat fungsi databases.get_candidate_by_id(candidate_id)
-    # Untuk sekarang, kita bisa fokus pada daftar ranking dulu.
-    pass
+@candidate_bp.route('/<candidate_id>', methods=['GET'])
+def get_candidate(candidate_id):
+    try:
+        candidate = Candidate.query.get(candidate_id)
+        if not candidate:
+            return jsonify({'error': 'Candidate not found'}), 404
+        
+        return jsonify({
+            'id': candidate.id,
+            'name': candidate.name,
+            'email': candidate.email,
+            'phone': candidate.phone,
+            'match_score': candidate.match_score,
+            'education': candidate.education,
+            'experience': candidate.experience,
+            'status': candidate.status,
+            'original_filename': candidate.original_filename,
+            'storage_path': candidate.storage_path,
+            'uploaded_at': candidate.uploaded_at.isoformat() if candidate.uploaded_at else None,
+            'job_id': candidate.job_id
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @hr_bp.route("/jobs", methods=["GET"])
@@ -320,6 +321,59 @@ def get_jobs_list():
         return jsonify(jobs)
     except Exception as e:
         return jsonify({"error": "Failed to fetch job list", "details": str(e)}), 500
+    
+@candidate_bp.route('/<candidate_id>/skills', methods=['GET'])
+def get_candidate_skills(candidate_id):
+    try:
+        print(f"🔍 [DEBUG] Mencari skills untuk candidate: {candidate_id}")
+        
+        candidate = Candidate.query.get(candidate_id)
+        if not candidate:
+            return jsonify({'error': 'Candidate not found'}), 404
+        
+        # Gunakan skill.skill_name bukan skill.name
+        candidate_skills = db.session.query(Skill).join(
+            CandidateSkill, Skill.id == CandidateSkill.skill_id
+        ).filter(
+            CandidateSkill.candidate_id == candidate_id
+        ).all()
+        
+        skills = []
+        for skill in candidate_skills:
+            skills.append({
+                'id': skill.id,
+                'name': skill.skill_name,  # PASTIKAN skill.skill_name
+                'category': skill.category if hasattr(skill, 'category') else 'General'
+            })
+        
+        print(f"✅ [DEBUG] Ditemukan {len(skills)} skills untuk {candidate.name}")
+        
+        return jsonify({
+            'candidate_id': candidate_id,
+            'candidate_name': candidate.name,
+            'skills': skills
+        })
+        
+    except Exception as e:
+        print(f"💥 [ERROR] get_candidate_skills: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@candidate_bp.route('/', methods=['GET'])
+def get_all_candidates():
+    try:
+        candidates = Candidate.query.all()
+        return jsonify([{
+            'id': candidate.id,
+            'name': candidate.name,
+            'email': candidate.email,
+            'match_score': candidate.match_score,
+            'status': candidate.status,
+            'uploaded_at': candidate.uploaded_at.isoformat() if candidate.uploaded_at else None
+        } for candidate in candidates])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # JOB POSTING ROUTES
