@@ -50,7 +50,7 @@ class AstraScoringService:
         print(f"🚀 [AI SMART ANALYZER] Processing: {job_title}")
         print("="*70)
 
-        # --- PROMPT: ADAPTIVE LOGIC (INTERN vs PRO) ---
+        # --- PROMPT: ADAPTIVE LOGIC + DIRECT ACTIONABLE ADVICE ---
         prompt = f"""
         Act as a Global Senior Recruiter & Career Coach.
         Your goal is to evaluate the candidate based on specific criteria with HIGH PRECISION.
@@ -94,12 +94,20 @@ class AstraScoringService:
            - Use of Action Verbs & Numbers.
            - For Interns: "Managed event budget" or "Led student team" counts as metrics.
 
-        === SKILL ANALYSIS INSTRUCTIONS ===
-        For each required skill, assign a **"Proof Level"**:
-        - **"Strong Evidence"**: Found in Work Experience OR **Academic Projects** with context.
-        - **"Standard Context"**: Found but generic.
-        - **"Listed Only"**: Found in list only.
-        - **"Missing"**: Not found.
+        === SKILL ANALYSIS INSTRUCTIONS (CRITICAL FOR ADVICE STYLE) ===
+        For each required skill:
+        1. Assign a **"Proof Level"**:
+           - **"Strong Evidence"**: Found in Work Experience OR **Academic Projects** with context.
+           - **"Standard Context"**: Found but generic.
+           - **"Listed Only"**: Found in list only.
+           - **"Missing"**: Not found.
+        
+        2. **WRITE THE REASON/ADVICE IN IMPERATIVE MOOD (DIRECT COMMAND):**
+           - **DO NOT** use third person like "The candidate should..." or "He needs to...".
+           - **DO** speak directly to the user. Use action verbs.
+           - **BAD:** "The candidate provides good evidence but lacks metrics."
+           - **GOOD:** "Add specific metrics to your Python project (e.g., 'Reduced processing time by 20%')."
+           - **GOOD:** "Move your SQL skill from the list to the Experience section by describing a specific query you wrote."
 
         === OUTPUT JSON FORMAT (ENGLISH ONLY) ===
         {{
@@ -116,9 +124,9 @@ class AstraScoringService:
                 "quality_raw": 0.0
             }},
             "skills_analysis": [
-                {{ "skill": "Name", "level": "Strong Evidence/Standard Context/Listed Only/Missing", "score": 10.0, "reason": "Advice." }}
+                {{ "skill": "Name", "level": "Strong Evidence/Standard Context/Listed Only/Missing", "score": 10.0, "reason": "Direct actionable advice (Imperative)." }}
             ],
-            "suggestion": "Advice."
+            "suggestion": "Main strategic advice for the candidate."
         }}
         """
 
