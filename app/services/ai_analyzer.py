@@ -339,39 +339,120 @@ def calculate_match_score(cv_text, job_desc_text):
 # 5. AI SEMANTIC MATCH SCORING
 # ===============================================
 
-def get_ai_match_score(cv_text, jd_text):
-    schema = {
-        "match_score": 0,
-        "reasoning": "",
-        "matched_skills": [],
-        "missing_skills": []
+def get_best_available_model():
+    """
+    Mendeteksi model terbaik yang tersedia di akun Google AI Studio Anda
+    berdasarkan urutan prioritas yang diinginkan.
+    """
+    priority_list = [
+        'models/gemini-2.5-flash', 
+        'models/gemini-2.0-flash', 
+        'models/gemini-1.5-pro',
+        'models/gemini-1.5-flash', 
+        'models/gemini-pro'
+    ]
+    
+    try:
+        # Ambil daftar model yang aktif dan support 'generateContent'
+        available_models = [
+            m.name for m in genai.list_models() 
+            if 'generateContent' in m.supported_generation_methods
+        ]
+        
+        # Cek satu per satu dari priority list
+        for model_name in priority_list:
+            if model_name in available_models:
+                print(f"[SYSTEM] Model terpilih: {model_name}")
+                return model_name
+                
+        # Jika tidak ada yang cocok di priority list, ambil yang pertama tersedia
+        return available_models[0] if available_models else 'models/gemini-1.5-flash'
+        
+    except Exception as e:
+        print(f"[WARNING] Gagal list_models ({e}), fallback ke gemini-1.5-flash")
+        return 'models/gemini-1.5-flash'
+    
+def get_ai_match_score(cv_text, job_description_text):
+    """
+    Menghitung match score menggunakan AI (Gemini) untuk perbandingan semantik.
+    Ini jauh lebih akurat daripada TF-IDF.
+    """
+    
+    model_name = get_best_available_model() 
+    gemini_model = None 
+    
+    try:
+        gemini_model = genai.GenerativeModel(model_name)
+    except Exception as e:
+        print(f"ERROR: Tidak bisa memuat model {model_name}: {e}")
+        return {"match_score": 0, "reasoning": "Model AI Error."}
+
+    # Skema JSON yang kita inginkan sebagai output dari AI
+    json_schema = {
+        "match_score": 0, # Angka 0-100
+        "reasoning": "Penjelasan singkat mengapa skornya segitu (pro & cons)",
+        "matched_skills": ["Skill 1", "Skill 2"],
+        "missing_skills": ["Skill 3", "Skill 4"]
     }
-
+    
+    # Prompt 
     prompt = f"""
-    Anda adalah Head of Talent Acquisition.
-    Bandingkan CV berikut dan JD berikut.
+    Act as a Senior Head of Talent Acquisition with 20+ years of experience.
+    Your task is to evaluate a candidate's CV against a Job Description (JD) using a STRICT SCORING RUBRIC.
+    
+    You must output ONLY valid JSON format, no preamble or markdown formatting.
 
-    Kembalikan hanya JSON:
-
-    {json.dumps(schema, indent=2)}
-
-    CV:
+    === INPUT DATA ===
+    
+    [CANDIDATE CV]:
     {cv_text}
+    
+    [JOB DESCRIPTION]:
+    {job_description_text}
 
-    JD:
-    {jd_text}
+    === SCORING RUBRIC (TOTAL: 100 POINTS) ===
+    You must calculate the score based strictly on these 3 dimensions:
 
-    JSON:
+    1. HARD SKILLS & RELEVANCE (Weight: 60% -> Max 60 Points)
+       - Does the candidate possess the MANDATORY technical skills required in the JD?
+       - Is the work experience relevance to the industry?
+       - Context Logic: If JD requires "Python" and CV only shows "Python Course" (no real work), score this lower.
+       - Synonym Logic: "Team Lead" in CV matches "Manager" in JD.
+
+    2. SENIORITY & EXPERIENCE (Weight: 20% -> Max 20 Points)
+       - Does the candidate meet the minimum years of experience?
+       - Is the seniority level (Junior/Mid/Senior) appropriate?
+
+    3. DESCRIPTION QUALITY & IMPACT (Weight: 20% -> Max 20 Points)
+       - ACTION VERBS: Award points if CV uses strong verbs (e.g., "Developed", "Spearheaded", "Optimized") instead of passive ones ("Responsible for").
+       - QUANTITATIVE RESULTS: Award BONUS points if CV contains numbers/metrics (e.g., "Increased sales by 20%", "Reduced latency by 2s").
+       - If the CV is generic with no numbers/impact, score this section LOW (0-10 points).
+
+    === INSTRUCTIONS ===
+    1. Analyze the CV against the JD.
+    2. Calculate the score for each of the 3 rubric sections above.
+    3. Sum them up to get the final `match_score`.
+    4. In the `reasoning` field, briefly explain the pros/cons based on these 3 criteria (e.g., "High skill match, but low score on description quality due to lack of metrics").
+    5. List `matched_skills` and `missing_skills`.
+
+    === JSON OUTPUT FORMAT ===
+    {json.dumps(json_schema)}
     """
 
     try:
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
-        resp = model.generate_content(prompt, generation_config=genai.GenerationConfig(
-            response_mime_type="application/json"
-        ))
-        return json.loads(resp.text)
-    except:
-        return schema
+        print(f"[DEBUG] Memanggil API Gemini untuk SCORING...")
+        generation_config = genai.GenerationConfig(
+            response_mime_type="application/json",
+            temperature=0.2
+        )
+        response = gemini_model.generate_content(prompt, generation_config=generation_config)
+        
+        parsed_data = json.loads(response.text)
+        return parsed_data
+
+    except Exception as e:
+        print(f"ERROR: Gagal memanggil API scoring Gemini: {e}")
+        return {"score": 0, "reasoning": f"Gagal parsing: {e}"}
 
 
 # ===============================================
