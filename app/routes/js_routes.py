@@ -148,7 +148,7 @@ def analyze_cv():
             os.remove(temp_path)
 
 
-# --- 2. ENDPOINT PREVIEW CV (DIPERBAIKI) ---
+# --- 2. ENDPOINT PREVIEW CV ---
 @js_bp.route('/cv/preview/<cv_id>', methods=['GET'])
 @cross_origin()
 @jwt_required()

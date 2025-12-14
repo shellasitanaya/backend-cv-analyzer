@@ -50,12 +50,12 @@ class AstraScoringService:
         print(f"🚀 [AI SMART ANALYZER] Processing: {job_title}")
         print("="*70)
 
-        # --- PROMPT: ADAPTIVE LOGIC (INTERN vs PRO) ---
+        # --- PROMPT: IMPROVED TONE & LOGIC ---
         prompt = f"""
-        Act as a Global Senior Recruiter & Career Coach.
-        Your goal is to evaluate the candidate based on specific criteria with HIGH PRECISION.
+        Act as a Professional Technical Recruiter.
+        Your goal is to evaluate the candidate with HIGH PRECISION and provide Direct, Constructive Feedback.
         
-        **CRITICAL RULE:** ALL OUTPUT MUST BE IN **ENGLISH**, regardless of the CV language.
+        **CRITICAL RULE:** ALL OUTPUT MUST BE IN **ENGLISH**.
 
         === JOB REQUIREMENT ===
         POSITION: {job_title}
@@ -68,47 +68,61 @@ class AstraScoringService:
         === INSTRUCTIONS ===
 
         1. **MANDATORY CHECKS (SMART GATEKEEPER)**:
-           - **Education Degree**: Check minimum degree. Higher degree is PASS. 
-             **CRITICAL STUDENT RULE:** If position is 'Intern', 'Magang', 'Trainee' -> Active Student status is **PASS**.
-             If position is 'Full-time'/'Senior' -> Active Student status is **FAIL**.
-           - **GPA / IPK**:
-             a. Identify Job Scale (Default 4.00).
-             b. Identify Candidate Scale (Infer 10.0 if > 4.0).
-             c. Normalize.
-             d. Evaluate: Fail if < Required. Pass if not found.
-           - **Experience**: Fail only if Actual < Required.
+           
+           **A. EDUCATION LEVEL & STATUS (STRICT)**:
+             Step 1: **DETECT JOB MODE**:
+               - IF Title/JD contains: "Intern", "Internship", "Magang", "Apprentice", "Trainee" -> Mode is **INTERNSHIP**.
+               - ELSE -> Mode is **PROFESSIONAL** (Default).
+
+             Step 2: **EVALUATE CANDIDATE**:
+               - Check if candidate is an **Active Student** (Keywords: "Present", "Now", "Expected Graduation", "Mahasiswa", "Semester").
+               - **LOGIC:**
+                 - IF Mode **PROFESSIONAL** AND Candidate is **Active Student** -> **STATUS: FAIL**.
+                 - IF Mode **INTERNSHIP** AND Candidate is **Active Student** -> **STATUS: PASS**.
+               
+               **REASONING STYLE:**
+               - **If FAIL:** Address the user directly. E.g., "Full-time professional roles require a completed degree. As an active student, you are eligible for internships, but not for this full-time position."
+               - **DO NOT** use "The candidate is...". Use "You are..." or "Your status...".
+
+           **B. MAJOR RELEVANCE (BROAD IT SPECTRUM)**:
+             - **Standard:** Major must relate to the Job Function.
+             - **IT EXCEPTION (CRITICAL):** For Software Engineering / Developer roles, degrees in **Data Science, Information Systems, Informatics, Computer Engineering, and Cyber Security** are considered **RELEVANT (PASS)**.
+             - **If PASS:** "Your major in [Major Name] provides a relevant technical foundation for this role."
+
+           **C. GPA / IPK**:
+             - Identify Scale (4.0/10.0), Normalize, and Evaluate.
+             - **If FAIL:** "Your GPA is below the standard requirement for this competitive role."
+
+           **D. Experience Duration**:
+             - Fail only if Actual Relevant Years < Required Years.
+             - **If FAIL:** "This role requires [X] years of experience. Your current profile highlights primarily academic or leadership experience."
 
         2. **SCORING RUBRIC (TOTAL 100.00)**:
-           *Rate each category on a scale of 0-100.*
            
            **A. Hard Skill Relevance (60%)**
-           - Does the candidate have the tools/tech stack required? 
-           - For Interns: Coursework/Projects count as valid skill proof.
+           - Does the candidate have the tools/tech stack required? (Mismatching stack = Low Score).
            
            **B. Seniority & Experience (20%) - CONTEXT AWARE:**
-           - **IF INTERN/JUNIOR ROLE:** Do NOT look for years of work. Look for: Organizational experience, Projects, Competitions, or Previous Internships. 
-             (Score 90-100 if they have strong projects/org experience).
-           - **IF SENIOR ROLE:** Look for years of professional experience matching the JD.
+           - **IF INTERNSHIP:** Look for Projects, Org Exp. (Score high if present).
+           - **IF PROFESSIONAL:** Look for **Professional Work Experience** matching the JD.
 
            **C. Description Quality (20%)**
            - Use of Action Verbs & Numbers.
-           - For Interns: "Managed event budget" or "Led student team" counts as metrics.
 
         === SKILL ANALYSIS INSTRUCTIONS ===
-        For each required skill, assign a **"Proof Level"**:
-        - **"Strong Evidence"**: Found in Work Experience OR **Academic Projects** with context.
-        - **"Standard Context"**: Found but generic.
-        - **"Listed Only"**: Found in list only.
-        - **"Missing"**: Not found.
+        For each required skill:
+        1. Assign a **"Proof Level"**: "Strong Evidence", "Standard Context", "Listed Only", "Missing".
+        2. **ADVICE STYLE:** Use IMPERATIVE MOOD (Direct Command). Speak to the user.
+           - E.g., "Add specific metrics to your project...", "Describe your experience with..."
 
         === OUTPUT JSON FORMAT (ENGLISH ONLY) ===
         {{
             "candidate_summary": "2 sentences summary.",
             "mandatory_checks": {{
-                "gpa": {{ "value": "Original", "converted_value": "Normalized", "status": "PASS/FAIL/NOTE", "reason": "..." }},
-                "major": {{ "value": "Major Name", "status": "PASS/FAIL", "reason": "..." }},
-                "experience_years": {{ "value": "Years", "status": "PASS/FAIL", "reason": "..." }},
-                "education_level": {{ "value": "Level", "status": "PASS/FAIL", "reason": "..." }}
+                "gpa": {{ "value": "Original", "converted_value": "Normalized", "status": "PASS/FAIL/NOTE", "reason": "Direct explanation to user." }},
+                "major": {{ "value": "Major Name", "status": "PASS/FAIL", "reason": "Direct explanation to user." }},
+                "experience_years": {{ "value": "Years", "status": "PASS/FAIL", "reason": "Direct explanation to user." }},
+                "education_level": {{ "value": "Degree Status", "status": "PASS/FAIL", "reason": "Direct explanation to user." }}
             }},
             "rubric_scores": {{
                 "relevance_raw": 0.0,  
@@ -116,9 +130,9 @@ class AstraScoringService:
                 "quality_raw": 0.0
             }},
             "skills_analysis": [
-                {{ "skill": "Name", "level": "Strong Evidence/Standard Context/Listed Only/Missing", "score": 10.0, "reason": "Advice." }}
+                {{ "skill": "Name", "level": "...", "score": 10.0, "reason": "Direct advice." }}
             ],
-            "suggestion": "Advice."
+            "suggestion": "Strategic advice."
         }}
         """
 
@@ -163,8 +177,11 @@ class AstraScoringService:
                 is_failed = True; fail_reasons.append("Education Level Mismatch")
 
             if is_failed:
-                final_score = min(final_score, 25.0) # Penalty
-                print(f"⛔ GATEKEEPER FAILED (Score Capped): {', '.join(fail_reasons)}")
+                # Logika Capped Score:
+                # Jika skor asli >= 25, turunkan jadi 25.
+                # Jika skor asli < 25, biarkan apa adanya (jangan dinaikkan).
+                final_score = min(final_score, 25.0) 
+                print(f"⛔ GATEKEEPER FAILED (Score Capped at 25%): {', '.join(fail_reasons)}")
 
             # --- LOGGING TO TERMINAL ---
             print(f"\n📊 RUBRIC CALCULATION:")
