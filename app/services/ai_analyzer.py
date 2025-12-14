@@ -21,6 +21,21 @@ except ImportError:
     pass
 
 # ===============================================
+# IMPORT NEW SERVICE
+# ===============================================
+try:
+    from app.services.astra_scoring_service import AstraScoringService
+except ImportError:
+    print("⚠️ WARNING: Could not import AstraScoringService")
+
+try:
+    from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+    import torch
+except ImportError:
+    print("ERROR: transformers/torch missing. Install via: pip install transformers torch")
+    pass
+
+# ===============================================
 # 1. INITIALIZATION
 # ===============================================
 
@@ -101,10 +116,8 @@ def extract_name_with_fallback(text):
 
 
 # ===============================================
-# 3. AI FIRST, THEN FALLBACK PARSER
+# 3. PARSING LOGIC
 # ===============================================
-
-# --- 3. FUNGSI PARSING UTAMA (PAKE AI) ---
 
 def parse_candidate_info(cv_text, required_skills=[]):
     """
@@ -119,51 +132,43 @@ def parse_candidate_info(cv_text, required_skills=[]):
         print(f"ERROR: Tidak bisa memuat model Gemini: {e}")
         return {} 
 
-    # Ini adalah struktur JSON yang WAJIB dipatuhi oleh sisa aplikasi Anda.
-    # AI akan kita paksa untuk mengikuti skema ini.
     json_schema = {
-        "name": "Nama lengkap kandidat (string)",
-        "email": "Email kandidat (string, null jika tidak ada)",
-        "phone": "Nomor telepon kandidat (string, null jika tidak ada)",
-        "gpa": "IPK sebagai angka float (float, null jika tidak ada)",
-        "education": "Tingkat pendidikan (string, misal: S1, S2, null jika tidak ada)",
-        # --- PERUBAHAN DI SINI ---
-        "skills": ["skill 1", "skill 2"], # List SEMUA skill yang ditemukan di CV (bukan hanya yang cocok)
-        # -------------------------
-        "experience": ["Jabatan 1 di Perusahaan 1 (Tanggal 1 - Tanggal 2)", "Jabatan 2 (Tanggal 3 - Tanggal 4)"], # List detail pengalaman
-        "total_experience": 0 # Total tahun pengalaman sebagai ANGKA INTEGER
+        "name": "Candidate's full name (string)",
+        "email": "Candidate's email (string, null if not found)",
+        "phone": "Candidate's phone number (string, null if not found)",
+        "gpa": "GPA as a float value (float, null if not found)",
+        "education": "Education level and major (string, e.g., 'Bachelor of Computer Science', null if not found)",
+        "skills": ["skill 1", "skill 2"], 
+        "experience": ["Role at Company (Date Start - Date End)"], 
+        "total_experience": 0 
     }
     
-    # Buat Prompt (Instruksi) untuk AI
+    # Prompt
     prompt = f"""
-    Anda adalah asisten HR AI yang sangat teliti. Tugas Anda adalah mengekstrak informasi dari teks CV berikut.
-    Kembalikan jawaban HANYA dalam format JSON yang valid, TANPA teks tambahan di awal atau akhir.
+    You are a highly meticulous AI HR Assistant. Your task is to extract structured information from the following CV text.
+    Return the answer ONLY in valid JSON format, WITHOUT additional text, markdown formatting, or explanations at the beginning or end.
     
-    Skema JSON yang WAJIB Anda ikuti:
+    STRICT JSON SCHEMA TO FOLLOW:
     {json.dumps(json_schema, indent=2)}
     
-    Instruksi Penting:
-    1.  **name**: Ekstrak nama lengkap orang tersebut.
-    2.  **gpa**: Cari IPK (GPA) dan ubah menjadi float (misal: 3.37). Jika tidak ada, kembalikan null.
-    3. **education**": "Tingkat pendidikan DAN jurusan (string, contoh: 'S1 Computer Science', 'D3 Teknik Informatika', null jika tidak ada)",
+    CRITICAL INSTRUCTIONS:
+    1. **name**: Extract the candidate's full name.
+    2. **gpa**: Find the GPA/IPK and convert it to a float (e.g., 3.37). If not found, return null.
+    3. **education**: Extract the highest education level AND major (string, e.g., 'Bachelor of Computer Science', 'Diploma in IT', 'Master of Business'). If not found, return null.
+    4. **skills**: Extract ALL skills (technical hard skills and soft skills) found in the CV. Return as a list of strings. Example: ["Python", "SQL", "Tableau", "Leadership", "Communication"].
+    5. **experience**: Extract each work experience as ONE string per job entry. Combine the Job Title, Company Name (if available), and Date Range. Example: ["Business Analyst at Google (May 2023–NOW)", "Data Analyst at Startup Inc (May 2022–May 2023)"].
+    6. **total_experience**: Calculate the total number of years of professional experience. 
+       - Logic: Determine the earliest start date of their career and the latest end date. Calculate the span (Latest - Earliest).
+       - Do NOT simply sum up the duration of overlapping jobs.
+       - Use the current year as 'NOW' or 'PRESENT'.
+       - Return as a SINGLE INTEGER (round to the nearest year).
+    7. **Null Handling**: If a field is not found in the text, return null (except for 'skills' and 'experience', return []). DO NOT add new fields outside the schema.
     
-    # --- PERUBAHAN DI SINI ---
-    4.  **skills**: Ekstrak SEMUA skill (keahlian teknis atau soft skill) yang Anda temukan di CV. Kembalikan sebagai sebuah list string. Contoh: ["Python", "SQL", "Tableau", "Leadership", "Communication"].
-    # -------------------------
-    
-    5.  **experience**: Ekstrak setiap pengalaman kerja sebagai SATU string per pekerjaan, gabungkan jabatan, perusahaan (jika ada), dan tanggal. Contoh: ["Business Analyst di CV. Nur Cahaya Pratama (May 2023–NOW)", "Data Analyst di UD Bangkit (May 2022–May 2023)"].
-    6.  **total_experience**: Hitung total tahun pengalaman kerja. 
-        Jika kandidat memiliki banyak pekerjaan yang tumpang tindih. Jangan jumlahkan durasi setiap proyek. 
-        Sebaliknya, tentukan tanggal pekerjaan paling awal (contoh: 2005) dan tanggal pekerjaan terakhir (contoh: 2025). 
-        Hitung total rentang karirnya (contoh: 2025 - 2005 = 20). 
-        Kembalikan sebagai SATU ANGKA INTEGER. Gunakan tahun 2025 sebagai tahun "NOW" atau "PRESENT".
-    7.  Jika sebuah field tidak ditemukan, kembalikan null (kecuali untuk 'skills' dan 'experience', kembalikan []). JANGAN tambahkan field di luar skema.
-    
-    Berikut adalah teks CV-nya:
+    Here is the CV Text:
     ---
     {cv_text}
     ---
-    
+
     JSON Output:
     """
 
@@ -334,39 +339,120 @@ def calculate_match_score(cv_text, job_desc_text):
 # 5. AI SEMANTIC MATCH SCORING
 # ===============================================
 
-def get_ai_match_score(cv_text, jd_text):
-    schema = {
-        "match_score": 0,
-        "reasoning": "",
-        "matched_skills": [],
-        "missing_skills": []
+def get_best_available_model():
+    """
+    Mendeteksi model terbaik yang tersedia di akun Google AI Studio Anda
+    berdasarkan urutan prioritas yang diinginkan.
+    """
+    priority_list = [
+        'models/gemini-2.5-flash', 
+        'models/gemini-2.0-flash', 
+        'models/gemini-1.5-pro',
+        'models/gemini-1.5-flash', 
+        'models/gemini-pro'
+    ]
+    
+    try:
+        # Ambil daftar model yang aktif dan support 'generateContent'
+        available_models = [
+            m.name for m in genai.list_models() 
+            if 'generateContent' in m.supported_generation_methods
+        ]
+        
+        # Cek satu per satu dari priority list
+        for model_name in priority_list:
+            if model_name in available_models:
+                print(f"[SYSTEM] Model terpilih: {model_name}")
+                return model_name
+                
+        # Jika tidak ada yang cocok di priority list, ambil yang pertama tersedia
+        return available_models[0] if available_models else 'models/gemini-1.5-flash'
+        
+    except Exception as e:
+        print(f"[WARNING] Gagal list_models ({e}), fallback ke gemini-1.5-flash")
+        return 'models/gemini-1.5-flash'
+    
+def get_ai_match_score(cv_text, job_description_text):
+    """
+    Menghitung match score menggunakan AI (Gemini) untuk perbandingan semantik.
+    Ini jauh lebih akurat daripada TF-IDF.
+    """
+    
+    model_name = get_best_available_model() 
+    gemini_model = None 
+    
+    try:
+        gemini_model = genai.GenerativeModel(model_name)
+    except Exception as e:
+        print(f"ERROR: Tidak bisa memuat model {model_name}: {e}")
+        return {"match_score": 0, "reasoning": "Model AI Error."}
+
+    # Skema JSON yang kita inginkan sebagai output dari AI
+    json_schema = {
+        "match_score": 0, # Angka 0-100
+        "reasoning": "Penjelasan singkat mengapa skornya segitu (pro & cons)",
+        "matched_skills": ["Skill 1", "Skill 2"],
+        "missing_skills": ["Skill 3", "Skill 4"]
     }
-
+    
+    # Prompt 
     prompt = f"""
-    Anda adalah Head of Talent Acquisition.
-    Bandingkan CV berikut dan JD berikut.
+    Act as a Senior Head of Talent Acquisition with 20+ years of experience.
+    Your task is to evaluate a candidate's CV against a Job Description (JD) using a STRICT SCORING RUBRIC.
+    
+    You must output ONLY valid JSON format, no preamble or markdown formatting.
 
-    Kembalikan hanya JSON:
-
-    {json.dumps(schema, indent=2)}
-
-    CV:
+    === INPUT DATA ===
+    
+    [CANDIDATE CV]:
     {cv_text}
+    
+    [JOB DESCRIPTION]:
+    {job_description_text}
 
-    JD:
-    {jd_text}
+    === SCORING RUBRIC (TOTAL: 100 POINTS) ===
+    You must calculate the score based strictly on these 3 dimensions:
 
-    JSON:
+    1. HARD SKILLS & RELEVANCE (Weight: 60% -> Max 60 Points)
+       - Does the candidate possess the MANDATORY technical skills required in the JD?
+       - Is the work experience relevance to the industry?
+       - Context Logic: If JD requires "Python" and CV only shows "Python Course" (no real work), score this lower.
+       - Synonym Logic: "Team Lead" in CV matches "Manager" in JD.
+
+    2. SENIORITY & EXPERIENCE (Weight: 20% -> Max 20 Points)
+       - Does the candidate meet the minimum years of experience?
+       - Is the seniority level (Junior/Mid/Senior) appropriate?
+
+    3. DESCRIPTION QUALITY & IMPACT (Weight: 20% -> Max 20 Points)
+       - ACTION VERBS: Award points if CV uses strong verbs (e.g., "Developed", "Spearheaded", "Optimized") instead of passive ones ("Responsible for").
+       - QUANTITATIVE RESULTS: Award BONUS points if CV contains numbers/metrics (e.g., "Increased sales by 20%", "Reduced latency by 2s").
+       - If the CV is generic with no numbers/impact, score this section LOW (0-10 points).
+
+    === INSTRUCTIONS ===
+    1. Analyze the CV against the JD.
+    2. Calculate the score for each of the 3 rubric sections above.
+    3. Sum them up to get the final `match_score`.
+    4. In the `reasoning` field, briefly explain the pros/cons based on these 3 criteria (e.g., "High skill match, but low score on description quality due to lack of metrics").
+    5. List `matched_skills` and `missing_skills`.
+
+    === JSON OUTPUT FORMAT ===
+    {json.dumps(json_schema)}
     """
 
     try:
-        model = genai.GenerativeModel("models/gemini-2.5-flash")
-        resp = model.generate_content(prompt, generation_config=genai.GenerationConfig(
-            response_mime_type="application/json"
-        ))
-        return json.loads(resp.text)
-    except:
-        return schema
+        print(f"[DEBUG] Memanggil API Gemini untuk SCORING...")
+        generation_config = genai.GenerationConfig(
+            response_mime_type="application/json",
+            temperature=0.2
+        )
+        response = gemini_model.generate_content(prompt, generation_config=generation_config)
+        
+        parsed_data = json.loads(response.text)
+        return parsed_data
+
+    except Exception as e:
+        print(f"ERROR: Gagal memanggil API scoring Gemini: {e}")
+        return {"score": 0, "reasoning": f"Gagal parsing: {e}"}
 
 
 # ===============================================
