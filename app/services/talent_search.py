@@ -2,6 +2,7 @@ from app.models import Candidate, Skill, CandidateSkill
 from sqlalchemy import or_, func, and_
 from app.extensions import db
 import re
+from difflib import SequenceMatcher
 
 # ============================
 # Role/Job Title Mapping untuk Experience Search
@@ -134,54 +135,282 @@ def find_closest_role(input_text):
 
         score = 0
         
-        input_words = input_lower.split()
-        role_words = role.split()
+        # Check for similarity using SequenceMatcher
+        similarity = SequenceMatcher(None, input_lower, role).ratio()
+        if similarity > 0.7:
+            score = similarity
         
-        exact_matches = len(set(input_words) & set(role_words))
-        if exact_matches > 0:
-            score = 0.6 + (exact_matches / max(len(input_words), len(role_words))) * 0.4
-        
-        if input_lower in role:
-            substring_score = 0.7 + (len(input_lower) / len(role)) * 0.3
-            score = max(score, substring_score)
-        
-        if role in input_lower and len(role) >= 3:
-            contains_score = 0.8 + (len(role) / len(input_lower)) * 0.2
-            score = max(score, contains_score)
-        
-        partial_matches = 0
-        for i_word in input_words:
-            for r_word in role_words:
-                if (i_word.startswith(r_word) or 
-                    r_word.startswith(i_word) or 
-                    (len(i_word) >= 3 and r_word in i_word) or 
-                    (len(r_word) >= 3 and i_word in r_word)):
-                    partial_matches += 1
-                    break
-        
-        partial_score = (partial_matches / max(len(input_words), len(role_words))) * 0.8
-        score = max(score, partial_score)
-        
-        if score > best_score and score > 0.6:
+        if score > best_score:
             best_score = score
             best_match = role
 
-    print(f"🔍 Fuzzy match backend: '{input_text}' → '{best_match}' (score: {best_score})")
     return best_match
+
+# Fungsi untuk mendeteksi apakah input adalah nama (berdasarkan pola)
+def is_likely_name(input_text):
+    """
+    Deteksi apakah input kemungkinan adalah nama seseorang
+    - Tidak mengandung kata kunci role yang umum
+    - Biasanya 2-3 kata
+    - Boleh huruf kapital atau tidak
+    """
+    if not input_text:
+        return False
+    
+    input_lower = input_text.lower().strip()
+    words = input_lower.split()
+    
+    # Jika hanya 1 kata, mungkin nama panggilan
+    if len(words) < 1 or len(words) > 4:
+        return False
+    
+    # Cek jika mengandung angka - pasti bukan nama
+    if any(char.isdigit() for char in input_text):
+        return False
+    
+    # Cek jika mengandung karakter khusus yang bukan nama
+    special_chars = ['@', '#', '$', '%', '&', '*', '+', '=', '<', '>', '/', '\\']
+    if any(char in input_text for char in special_chars):
+        return False
+    
+    # Kata kunci role yang umum - jika ada, bukan nama
+    common_role_keywords = [
+        'developer', 'engineer', 'designer', 'analyst', 'manager', 
+        'specialist', 'intern', 'junior', 'senior', 'lead', 'frontend',
+        'backend', 'fullstack', 'mobile', 'web', 'software', 'data',
+        'ui', 'ux', 'devops', 'cloud', 'machine', 'learning', 'ai',
+        'database', 'administrator', 'support', 'technical', 'customer',
+        'service', 'sales', 'marketing', 'content', 'seo', 'social',
+        'media', 'product', 'project', 'scrum', 'agile', 'quality',
+        'control', 'assurance', 'operations', 'hr', 'human', 'resources',
+        'recruiter', 'talent', 'finance', 'accounting', 'tax', 'medical',
+        'nurse', 'doctor', 'pharmacist', 'teacher', 'tutor', 'security',
+        'chef', 'waiter', 'mechanic', 'electrical', 'civil', 'robotics',
+        'automation', 'production', 'machine', 'admin', 'administration',
+        'logistics', 'supply', 'chain', 'warehouse', 'driver'
+    ]
+    
+    # Cek setiap kata apakah termasuk keyword role
+    for word in words:
+        if word in common_role_keywords:
+            print(f"❌ Rejected as name: contains role keyword '{word}'")
+            return False
+    
+    # Cek jika terlalu panjang untuk nama (lebih dari 30 karakter tanpa spasi)
+    if len(input_text.replace(' ', '')) > 30:
+        return False
+    
+    # Cek pola umum nama:
+    # - Biasanya mengandung huruf dan spasi saja
+    # - Tidak ada kata yang terlalu panjang (lebih dari 10 huruf)
+    for word in words:
+        if len(word) > 15:  # Kata terlalu panjang untuk nama
+            return False
+    
+    # Jika lolos semua pengecekan, kemungkinan besar adalah nama
+    print(f"✅ Detected as likely name: {input_text}")
+    return True
+
+# Fungsi untuk search nama
+def search_by_name(name_query):
+    """Search candidates by name with fuzzy matching"""
+    name_lower = name_query.lower().strip()
+    
+    if not name_lower:
+        return []
+    
+    try:
+        # Split nama menjadi kata-kata
+        name_words = name_lower.split()
+        
+        # Build conditions untuk setiap kata dalam nama
+        name_conditions = []
+        for word in name_words:
+            if len(word) >= 2:  # Minimal 2 karakter
+                name_conditions.append(func.lower(Candidate.name).like(f"%{word}%"))
+        
+        if not name_conditions:
+            return []
+        
+        query = (
+            db.session.query(Candidate)
+            .filter(or_(*name_conditions))
+            .all()
+        )
+        
+        results = []
+        for candidate in query:
+            # Get candidate skills
+            db_skills = []
+            if hasattr(candidate, 'candidate_skills'):
+                db_skills = [cs.skill.skill_name for cs in candidate.candidate_skills if cs.skill]
+            
+            # Calculate match score for name
+            candidate_name_lower = candidate.name.lower()
+            similarity = SequenceMatcher(None, name_lower, candidate_name_lower).ratio()
+            name_match_score = int(similarity * 100)
+            
+            candidate_data = {
+                "id": candidate.id,
+                "name": candidate.name,
+                "email": candidate.email,
+                "phone": candidate.phone,
+                "match_score": name_match_score,
+                "matched_skills_count": 0,
+                "total_searched_skills": 0,
+                "has_role_match": False,
+                "role_matched": None,
+                "status": candidate.status,
+                "skills": db_skills,
+                "experience": getattr(candidate, 'experience', ''),
+                "education": getattr(candidate, 'education', ''),
+                "search_type": "name"
+            }
+            
+            results.append(candidate_data)
+        
+        # Sort by name match score
+        results.sort(key=lambda x: x['match_score'], reverse=True)
+        
+        print(f"🔍 Name search for '{name_query}' found {len(results)} candidates")
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error in name search: {e}")
+        return []
+
+# Fungsi untuk search skill saja (tanpa role)
+def search_by_skills_only(skill_terms):
+    """Search candidates based only on skills"""
+    if not skill_terms:
+        return []
+    
+    try:
+        print(f"🎯 Performing SKILLS-ONLY search for: {skill_terms}")
+        
+        # Build skill conditions
+        skill_conditions = []
+        for term in skill_terms:
+            like_pattern = f"%{term}%"
+            skill_conditions.append(func.lower(Skill.skill_name).like(like_pattern))
+        
+        # Query untuk skill match dengan counting
+        query = (
+            db.session.query(
+                Candidate,
+                func.count(Skill.id).label('matched_skills_count')
+            )
+            .join(CandidateSkill, Candidate.id == CandidateSkill.candidate_id)
+            .join(Skill, Skill.id == CandidateSkill.skill_id)
+            .filter(or_(*skill_conditions))
+            .group_by(Candidate.id)
+            .order_by(func.count(Skill.id).desc())
+            .all()
+        )
+        
+        results = []
+        for candidate, matched_count in query:
+            try:
+                # Get all candidate skills
+                db_skills = []
+                if hasattr(candidate, 'candidate_skills'):
+                    db_skills = [cs.skill.skill_name for cs in candidate.candidate_skills if cs.skill]
+                
+                total_searched = len(skill_terms)
+                skill_match_ratio = matched_count / total_searched if total_searched > 0 else 0
+                match_score = int(skill_match_ratio * 100)
+                
+                candidate_data = {
+                    "id": candidate.id,
+                    "name": candidate.name,
+                    "email": candidate.email,
+                    "phone": candidate.phone,
+                    "match_score": match_score,
+                    "matched_skills_count": matched_count,
+                    "total_searched_skills": total_searched,
+                    "has_role_match": False,
+                    "role_matched": None,
+                    "status": candidate.status,
+                    "skills": db_skills,
+                    "experience": getattr(candidate, 'experience', ''),
+                    "education": getattr(candidate, 'education', ''),
+                    "search_type": "skills_only"
+                }
+                
+                results.append(candidate_data)
+                
+            except Exception as e:
+                print(f"❌ Error processing candidate {candidate.id}: {e}")
+                continue
+        
+        print(f"📊 Skill-only search berhasil, ditemukan {len(results)} kandidat")
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error in skill-only search: {e}")
+        return []
+
+# Fungsi untuk search all candidates (no filter)
+def get_all_candidates():
+    """Get all candidates without any filtering"""
+    try:
+        candidates = Candidate.query.all()
+        
+        results = []
+        for candidate in candidates:
+            # Get candidate skills
+            db_skills = []
+            if hasattr(candidate, 'candidate_skills'):
+                db_skills = [cs.skill.skill_name for cs in candidate.candidate_skills if cs.skill]
+            
+            candidate_data = {
+                "id": candidate.id,
+                "name": candidate.name,
+                "email": candidate.email,
+                "phone": candidate.phone,
+                "match_score": float(candidate.match_score) if candidate.match_score else 50.0,
+                "matched_skills_count": 0,
+                "total_searched_skills": 0,
+                "has_role_match": False,
+                "role_matched": None,
+                "status": candidate.status,
+                "skills": db_skills,
+                "experience": getattr(candidate, 'experience', ''),
+                "education": getattr(candidate, 'education', ''),
+                "search_type": "all"
+            }
+            
+            results.append(candidate_data)
+        
+        print(f"📊 Retrieved all {len(results)} candidates")
+        return results
+        
+    except Exception as e:
+        print(f"❌ Error getting all candidates: {e}")
+        return []
 
 def search_candidates(keyword: str):
     """
-    Cari kandidat berdasarkan kombinasi role dan skill dengan scoring yang lebih baik
+    Cari kandidat berdasarkan kombinasi role, skill, atau name
     """
     keyword_lower = keyword.lower().strip()
     
-    if not keyword_lower:
-        return []
+    # Jika keyword kosong atau "all", return semua kandidat
+    if not keyword_lower or keyword_lower == "all" or keyword_lower == "semua":
+        print(f"🔍 Returning ALL candidates for keyword: '{keyword}'")
+        return get_all_candidates()
     
     print(f"🎯 Starting search for: '{keyword}'")
     
     # ============================
-    # 1. Identifikasi Role dan Skill
+    # 1. Cek apakah ini name search
+    # ============================
+    if is_likely_name(keyword):
+        print(f"👤 Detected as NAME search: {keyword}")
+        return search_by_name(keyword)
+    
+    # ============================
+    # 2. Identifikasi Role dan Skill
     # ============================
     role_terms = []
     skill_terms = []
@@ -209,16 +438,17 @@ def search_candidates(keyword: str):
         # Jika tidak ada role yang terdeteksi, anggap semua sebagai skill
         skill_terms = [term.strip() for term in re.split(r'[,\s]+', keyword_lower) if term.strip()]
         print(f"🔍 Pure skill search: {skill_terms}")
+        
+        # Jika hanya skill terms tanpa role, lakukan skill-only search
+        if skill_terms and not role_terms:
+            return search_by_skills_only(skill_terms)
     
     # ============================
-    # 2. Eksekusi Query dengan Prioritas Skill Match
+    # 3. Eksekusi Query berdasarkan kondisi
     # ============================
     try:
-        # Untuk kombinasi role + skill, kita akan lakukan query terpisah
-        # untuk memastikan kandidat dengan skill match lebih tinggi diutamakan
-        
         if role_terms and skill_terms:
-            # CASE 1: Kombinasi Role + Skill - UTAMAKAN SKILL MATCH
+            # CASE 1: Kombinasi Role + Skill
             print("🎯 Performing ROLE + SKILL search with skill priority")
             
             # Buat kondisi untuk role
@@ -245,7 +475,7 @@ def search_candidates(keyword: str):
                     or_(*skill_conditions)
                 ))
                 .group_by(Candidate.id)
-                .order_by(func.count(Skill.id).desc())  # Urutkan berdasarkan jumlah skill match
+                .order_by(func.count(Skill.id).desc())
                 .all()
             )
             
@@ -257,13 +487,13 @@ def search_candidates(keyword: str):
                     if hasattr(candidate, 'candidate_skills'):
                         db_skills = [cs.skill.skill_name for cs in candidate.candidate_skills if cs.skill]
                     
-                    # Hitung match score dengan bobot skill yang lebih tinggi
+                    # Hitung match score
                     total_searched = len(skill_terms)
                     skill_match_ratio = matched_count / total_searched if total_searched > 0 else 0
                     
-                    # Beri bobot lebih tinggi untuk skill match (80%) vs role match (20%)
-                    role_match_score = 20 if role_terms else 0
-                    skill_match_score = skill_match_ratio * 80
+                    # Weighted score: role match (40%) + skill match (60%)
+                    role_match_score = 40  # Karena role match ditemukan
+                    skill_match_score = skill_match_ratio * 60
                     overall_match_score = min(100, role_match_score + skill_match_score)
                     
                     candidate_data = {
@@ -274,15 +504,15 @@ def search_candidates(keyword: str):
                         "match_score": float(overall_match_score),
                         "matched_skills_count": matched_count,
                         "total_searched_skills": total_searched,
-                        "has_role_match": bool(role_terms),
+                        "has_role_match": True,
                         "role_matched": closest_role,
                         "status": candidate.status,
                         "skills": db_skills,
                         "experience": getattr(candidate, 'experience', ''),
-                        "university": getattr(candidate, 'education', ''),
+                        "education": getattr(candidate, 'education', ''),
+                        "search_type": "role_skills"
                     }
                     
-                    candidate_data = {k: v for k, v in candidate_data.items() if v is not None}
                     results.append(candidate_data)
                     
                 except Exception as e:
@@ -324,10 +554,10 @@ def search_candidates(keyword: str):
                     "status": candidate.status,
                     "skills": db_skills,
                     "experience": getattr(candidate, 'experience', ''),
-                    "university": getattr(candidate, 'education', ''),
+                    "education": getattr(candidate, 'education', ''),
+                    "search_type": "role_only"
                 }
                 
-                candidate_data = {k: v for k, v in candidate_data.items() if v is not None}
                 results.append(candidate_data)
             
             print(f"📊 Role search berhasil, ditemukan {len(results)} kandidat")
@@ -335,73 +565,18 @@ def search_candidates(keyword: str):
         elif skill_terms:
             # CASE 3: Hanya Skill search
             print("🎯 Performing SKILL-only search")
-            
-            skill_conditions = []
-            for term in skill_terms:
-                like_pattern = f"%{term}%"
-                skill_conditions.append(func.lower(Skill.skill_name).like(like_pattern))
-            
-            query = (
-                db.session.query(
-                    Candidate,
-                    func.count(Skill.id).label('matched_skills_count')
-                )
-                .join(CandidateSkill, Candidate.id == CandidateSkill.candidate_id)
-                .join(Skill, Skill.id == CandidateSkill.skill_id)
-                .filter(or_(*skill_conditions))
-                .group_by(Candidate.id)
-                .order_by(func.count(Skill.id).desc())
-                .all()
-            )
-            
-            results = []
-            for candidate, matched_count in query:
-                try:
-                    db_skills = []
-                    if hasattr(candidate, 'candidate_skills'):
-                        db_skills = [cs.skill.skill_name for cs in candidate.candidate_skills if cs.skill]
-                    
-                    total_searched = len(skill_terms)
-                    match_percentage = min(100, int((matched_count / total_searched) * 100))
-                    
-                    candidate_data = {
-                        "id": candidate.id,
-                        "name": candidate.name,
-                        "email": candidate.email,
-                        "phone": candidate.phone,
-                        "match_score": float(match_percentage),
-                        "matched_skills_count": matched_count,
-                        "total_searched_skills": total_searched,
-                        "has_role_match": False,
-                        "role_matched": None,
-                        "status": candidate.status,
-                        "skills": db_skills,
-                        "experience": getattr(candidate, 'experience', ''),
-                        "university": getattr(candidate, 'education', ''),
-                    }
-                    
-                    candidate_data = {k: v for k, v in candidate_data.items() if v is not None}
-                    results.append(candidate_data)
-                    
-                except Exception as e:
-                    print(f"❌ Error memproses kandidat {candidate.id}: {e}")
-                    continue
-            
-            print(f"📊 Skill search berhasil, ditemukan {len(results)} kandidat")
+            return search_by_skills_only(skill_terms)
         
         else:
-            return []
+            # CASE 4: Tidak ada kriteria, kembalikan semua
+            print("📊 No criteria, returning all candidates")
+            return get_all_candidates()
         
         # Debug info
         if results:
             print(f"🎉 Berhasil memproses {len(results)} kandidat")
             for result in results[:3]:
-                if result['has_role_match'] and result['total_searched_skills'] > 0:
-                    print(f"   - {result['name']}: Role '{result['role_matched']}' + {result['matched_skills_count']}/{result['total_searched_skills']} skills - Score: {result['match_score']}%")
-                elif result['has_role_match']:
-                    print(f"   - {result['name']}: Role '{result['role_matched']}' - Score: {result['match_score']}%")
-                else:
-                    print(f"   - {result['name']}: {result['matched_skills_count']}/{result['total_searched_skills']} skills - Score: {result['match_score']}%")
+                print(f"   - {result['name']}: Score: {result['match_score']}% - Type: {result.get('search_type', 'unknown')}")
         else:
             print("❌ Tidak ada hasil yang ditemukan")
         
@@ -409,4 +584,6 @@ def search_candidates(keyword: str):
         
     except Exception as e:
         print(f"❌ Error dalam query: {e}")
+        import traceback
+        traceback.print_exc()
         return []

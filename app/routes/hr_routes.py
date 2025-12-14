@@ -225,7 +225,42 @@ def get_ranked_candidates(job_id):
     except Exception as e:
         return jsonify({"error": f"Gagal mengambil data dari database: {e}"}), 500
     
-
+@hr_bp.route('/skills/autocomplete', methods=['GET'])
+def autocomplete_skills():
+    """Autocomplete untuk skill search"""
+    try:
+        query = request.args.get('q', '').lower().strip()
+        
+        if not query or len(query) < 1:
+            return jsonify({
+                "status": "success",
+                "data": []
+            }), 200
+        
+        # Search skills dengan LIKE
+        skills = Skill.query.filter(
+            func.lower(Skill.skill_name).like(f"%{query}%")
+        ).limit(10).all()
+        
+        skill_list = [{
+            "id": skill.id,
+            "name": skill.skill_name,
+            "skill_name": skill.skill_name  # untuk kompatibilitas
+        } for skill in skills]
+        
+        return jsonify({
+            "status": "success",
+            "data": skill_list
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Error in skill autocomplete: {e}")
+        return jsonify({
+            "status": "error",
+            "message": "Error in skill autocomplete",
+            "data": []
+        }), 500
+    
 @hr_bp.route('/candidates/search', methods=['GET'])
 def search_candidates_endpoint():
     try:
