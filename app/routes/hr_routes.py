@@ -160,31 +160,29 @@ def upload_and_process_cvs(job_id):
             # ----------------------------------------------------
             # -----------------------------------------------
 
-            # Filter cek GPA
-            if job_requirements["min_gpa"] is not None and (
-                candidate_gpa is None or candidate_gpa < job_requirements["min_gpa"]
-            ):
-                rejection_reason = (
-                    f"GPA below minimum requirement ({job_requirements['min_gpa']})"
-                )
+            rejection_reasons = []  # <--- INI YANG HILANG SEBELUMNYA
 
-            # Filter cek Experience
-            elif job_requirements.get("min_experience") is not None and (
-                candidate_experience is None
-                or candidate_experience < job_requirements.get("min_experience")
-            ):
-                rejection_reason = f"Experience below minimum requirement ({job_requirements.get('min_experience')} years)"
-                
-            # Filter 3: Cek Edukasi (Baru Ditambahkan)
-            elif required_edu_level > 0 and (
-                candidate_edu_level < required_edu_level
-            ):
-                rejection_reason = f"Education below minimum requirement ({job_requirements['degree_requirements']})"
-            # ----------------------------------------------------
+            # 1. Cek GPA
+            if job_requirements["min_gpa"] is not None:
+                if candidate_gpa is None:
+                    rejection_reasons.append("GPA not found/invalid") 
+                elif candidate_gpa < job_requirements["min_gpa"]:
+                    rejection_reasons.append( f"GPA below minimum requirement ({job_requirements['min_gpa']})")
 
-            # --- PERBAIKAN LOGIKA PENYIMPANAN ---
+            # 2. Cek Experience
+            if job_requirements.get("min_experience") is not None:
+                if candidate_experience is None:
+                    rejection_reasons.append("Experience not found")
+                elif candidate_experience < job_requirements.get("min_experience"):
+                    rejection_reasons.append(f"Experience below minimum requirement ({job_requirements.get('min_experience')} years)")
 
-            # 1. Siapkan SEMUA data dari parser
+            # 3. Cek Education
+            if required_edu_level > 0:
+                if candidate_edu_level < required_edu_level:
+                    rejection_reasons.append(f"Education below minimum requirement ({job_requirements['degree_requirements']})")
+
+
+            # --- PREPARE DATA UNTUK DISIMPAN ---``
             candidate_data = {
                 "original_filename": filename,
                 "storage_path": file_path,
@@ -199,39 +197,36 @@ def upload_and_process_cvs(job_id):
                 "scoring_reason": None
             }
 
-            if rejection_reason:
-                # 2. Tambahkan info jika ditolak
+            # --- PENENTUAN STATUS AKHIR ---
+            if len(rejection_reasons) > 0:
+                # GABUNGKAN SEMUA ALASAN MENJADI SATU STRING
+                final_reason = "; ".join(rejection_reasons)
+
                 report["rejected_count"] += 1
-                report["rejection_details"][rejection_reason] = (
-                    report["rejection_details"].get(rejection_reason, 0) + 1
+                report["rejection_details"][final_reason] = (
+                    report["rejection_details"].get(final_reason, 0) + 1
                 )
 
                 candidate_data["status"] = "rejected"
-                candidate_data["rejection_reason"] = rejection_reason
+                candidate_data["rejection_reason"] = final_reason # Simpan string gabungan
 
-                databases.save_candidate(job_id, candidate_data)  # Kirim data lengkap
+                print(f"[DEBUG] Rejected: {filename} -> {final_reason}")
+                databases.save_candidate(job_id, candidate_data)
 
             else:
-                # 3. Tambahkan info jika lolos
+                # LOLOS FILTER -> LANJUT KE AI SCORING
                 report["passed_count"] += 1
-                # score = calculate_match_score(cv_text, job_description)
-
-                # candidate_data["status"] = "passed_filter"
-                # candidate_data["score"] = score
                 
-                # Panggil fungsi scoring AI yang baru
                 ai_result = get_ai_match_score(cv_text, job_description) 
                 
-                print(f"--- [DEBUG] Alasan Scoring AI untuk {filename} ---")
-                pprint.pprint(ai_result)
-                print("--------------------------------------------------")
+                print(f"[DEBUG] AI Scoring Result for {filename}: {ai_result}")
                 
                 candidate_data['status'] = 'passed_filter'
                 candidate_data['score'] = ai_result.get('match_score', 0)
                 candidate_data["scoring_reason"] = ai_result.get("reasoning")
 
-                databases.save_candidate(job_id, candidate_data)  # Kirim data lengkap
-
+                databases.save_candidate(job_id, candidate_data)
+                
         except Exception as e:
             print(f"Error processing {filename}: {e}")
             import traceback
