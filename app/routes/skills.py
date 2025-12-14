@@ -27,12 +27,12 @@ def autocomplete_skills():
         
         # Juga cari job titles/roles yang mengandung query
         experiences = (
-            db.session.query(
-                distinct(func.lower(Candidate.experience)).label('experience')
-            )
-            .filter(func.lower(Candidate.experience).like(f"%{query}%"))
-            .limit(5)
-            .all()
+            # db.session.query(
+            #     distinct(func.lower(Candidate.experience)).label('experience')
+            # )
+            # .filter(func.lower(Candidate.experience).like(f"%{query}%"))
+            # .limit(5)
+            # .all()
         )
         
         results = []

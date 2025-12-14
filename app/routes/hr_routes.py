@@ -18,7 +18,7 @@ from app.services.ai_analyzer import parse_candidate_info, calculate_match_score
 from app.models import Candidate, CandidateSkill, Skill
 from app.extensions import db
 import app.databases as databases
-from app.services.talent_search import search_candidates
+from app.services.talent_search import search_candidates, search_candidates_with_skills, get_all_candidates
 
 candidate_bp = Blueprint('candidate', __name__, url_prefix='/api/candidates')
 hr_bp = Blueprint('hr_api', __name__, url_prefix='/api/hr')
@@ -348,32 +348,43 @@ def get_ranked_candidates(job_id):
         print(f"!!! ERROR in get_ranked_candidates: {e}") 
         traceback.print_exc()
         return jsonify({"error": f"Gagal mengambil data dari database: {e}"}), 500
-    
 
-@hr_bp.route('/candidates/search', methods=['GET'])
+
+
+@hr_bp.route('/candidates/search', methods=['GET', 'POST'])
 def search_candidates_endpoint():
     try:
-        keyword = request.args.get("q", "")
-        if not keyword:
-            return jsonify({
-                "status": "success",
-                "message": "Keyword not found, no results",
-                "data": []
-            }), 200
-
-        results = search_candidates(keyword)
+        # Handle POST request dengan skills
+        if request.method == 'POST':
+            data = request.get_json()
+            keyword = data.get("query", "").strip()
+            skills = data.get("skills", [])
+            
+            print(f"🔍 POST Search request - Query: '{keyword}', Skills: {skills}")
+            
+            # Panggil fungsi search baru yang mendukung skills
+            results = search_candidates_with_skills(keyword, skills)
+            
+        else:  # GET request (legacy)
+            keyword = request.args.get("q", "").strip()
+            print(f"🔍 GET Search request - Query: '{keyword}'")
+            
+            # Call original search_candidates for backward compatibility
+            results = search_candidates(keyword)
 
         return jsonify({
             "status": "success",
-            "message": f"{len(results)} candidate found with the keyword '{keyword}'",
+            "message": f"{len(results)} candidate(s) found",
             "data": results
         }), 200
 
     except Exception as e:
-        print("ERROR search_candidates:", e)
+        print("❌ ERROR search_candidates:", e)
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "status": "error",
-            "message": "There has been a mistake finding a candidate",
+            "message": "There has been a mistake finding candidates",
             "data": [],
             "details": str(e)
         }), 500
@@ -394,6 +405,7 @@ def get_jobs_list():
         return jsonify(jobs)
     except Exception as e:
         return jsonify({"error": "Failed to fetch job list", "details": str(e)}), 500
+
 
 
 # JOB POSTING ROUTES
