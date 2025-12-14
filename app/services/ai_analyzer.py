@@ -21,6 +21,21 @@ except ImportError:
     pass
 
 # ===============================================
+# IMPORT NEW SERVICE
+# ===============================================
+try:
+    from app.services.astra_scoring_service import AstraScoringService
+except ImportError:
+    print("⚠️ WARNING: Could not import AstraScoringService")
+
+try:
+    from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
+    import torch
+except ImportError:
+    print("ERROR: transformers/torch missing. Install via: pip install transformers torch")
+    pass
+
+# ===============================================
 # 1. INITIALIZATION
 # ===============================================
 
@@ -101,10 +116,8 @@ def extract_name_with_fallback(text):
 
 
 # ===============================================
-# 3. AI FIRST, THEN FALLBACK PARSER
+# 3. PARSING LOGIC
 # ===============================================
-
-# --- 3. FUNGSI PARSING UTAMA (PAKE AI) ---
 
 def parse_candidate_info(cv_text, required_skills=[]):
     """
@@ -119,51 +132,43 @@ def parse_candidate_info(cv_text, required_skills=[]):
         print(f"ERROR: Tidak bisa memuat model Gemini: {e}")
         return {} 
 
-    # Ini adalah struktur JSON yang WAJIB dipatuhi oleh sisa aplikasi Anda.
-    # AI akan kita paksa untuk mengikuti skema ini.
     json_schema = {
-        "name": "Nama lengkap kandidat (string)",
-        "email": "Email kandidat (string, null jika tidak ada)",
-        "phone": "Nomor telepon kandidat (string, null jika tidak ada)",
-        "gpa": "IPK sebagai angka float (float, null jika tidak ada)",
-        "education": "Tingkat pendidikan (string, misal: S1, S2, null jika tidak ada)",
-        # --- PERUBAHAN DI SINI ---
-        "skills": ["skill 1", "skill 2"], # List SEMUA skill yang ditemukan di CV (bukan hanya yang cocok)
-        # -------------------------
-        "experience": ["Jabatan 1 di Perusahaan 1 (Tanggal 1 - Tanggal 2)", "Jabatan 2 (Tanggal 3 - Tanggal 4)"], # List detail pengalaman
-        "total_experience": 0 # Total tahun pengalaman sebagai ANGKA INTEGER
+        "name": "Candidate's full name (string)",
+        "email": "Candidate's email (string, null if not found)",
+        "phone": "Candidate's phone number (string, null if not found)",
+        "gpa": "GPA as a float value (float, null if not found)",
+        "education": "Education level and major (string, e.g., 'Bachelor of Computer Science', null if not found)",
+        "skills": ["skill 1", "skill 2"], 
+        "experience": ["Role at Company (Date Start - Date End)"], 
+        "total_experience": 0 
     }
     
-    # Buat Prompt (Instruksi) untuk AI
+    # Prompt
     prompt = f"""
-    Anda adalah asisten HR AI yang sangat teliti. Tugas Anda adalah mengekstrak informasi dari teks CV berikut.
-    Kembalikan jawaban HANYA dalam format JSON yang valid, TANPA teks tambahan di awal atau akhir.
+    You are a highly meticulous AI HR Assistant. Your task is to extract structured information from the following CV text.
+    Return the answer ONLY in valid JSON format, WITHOUT additional text, markdown formatting, or explanations at the beginning or end.
     
-    Skema JSON yang WAJIB Anda ikuti:
+    STRICT JSON SCHEMA TO FOLLOW:
     {json.dumps(json_schema, indent=2)}
     
-    Instruksi Penting:
-    1.  **name**: Ekstrak nama lengkap orang tersebut.
-    2.  **gpa**: Cari IPK (GPA) dan ubah menjadi float (misal: 3.37). Jika tidak ada, kembalikan null.
-    3. **education**": "Tingkat pendidikan DAN jurusan (string, contoh: 'S1 Computer Science', 'D3 Teknik Informatika', null jika tidak ada)",
+    CRITICAL INSTRUCTIONS:
+    1. **name**: Extract the candidate's full name.
+    2. **gpa**: Find the GPA/IPK and convert it to a float (e.g., 3.37). If not found, return null.
+    3. **education**: Extract the highest education level AND major (string, e.g., 'Bachelor of Computer Science', 'Diploma in IT', 'Master of Business'). If not found, return null.
+    4. **skills**: Extract ALL skills (technical hard skills and soft skills) found in the CV. Return as a list of strings. Example: ["Python", "SQL", "Tableau", "Leadership", "Communication"].
+    5. **experience**: Extract each work experience as ONE string per job entry. Combine the Job Title, Company Name (if available), and Date Range. Example: ["Business Analyst at Google (May 2023–NOW)", "Data Analyst at Startup Inc (May 2022–May 2023)"].
+    6. **total_experience**: Calculate the total number of years of professional experience. 
+       - Logic: Determine the earliest start date of their career and the latest end date. Calculate the span (Latest - Earliest).
+       - Do NOT simply sum up the duration of overlapping jobs.
+       - Use the current year as 'NOW' or 'PRESENT'.
+       - Return as a SINGLE INTEGER (round to the nearest year).
+    7. **Null Handling**: If a field is not found in the text, return null (except for 'skills' and 'experience', return []). DO NOT add new fields outside the schema.
     
-    # --- PERUBAHAN DI SINI ---
-    4.  **skills**: Ekstrak SEMUA skill (keahlian teknis atau soft skill) yang Anda temukan di CV. Kembalikan sebagai sebuah list string. Contoh: ["Python", "SQL", "Tableau", "Leadership", "Communication"].
-    # -------------------------
-    
-    5.  **experience**: Ekstrak setiap pengalaman kerja sebagai SATU string per pekerjaan, gabungkan jabatan, perusahaan (jika ada), dan tanggal. Contoh: ["Business Analyst di CV. Nur Cahaya Pratama (May 2023–NOW)", "Data Analyst di UD Bangkit (May 2022–May 2023)"].
-    6.  **total_experience**: Hitung total tahun pengalaman kerja. 
-        Jika kandidat memiliki banyak pekerjaan yang tumpang tindih. Jangan jumlahkan durasi setiap proyek. 
-        Sebaliknya, tentukan tanggal pekerjaan paling awal (contoh: 2005) dan tanggal pekerjaan terakhir (contoh: 2025). 
-        Hitung total rentang karirnya (contoh: 2025 - 2005 = 20). 
-        Kembalikan sebagai SATU ANGKA INTEGER. Gunakan tahun 2025 sebagai tahun "NOW" atau "PRESENT".
-    7.  Jika sebuah field tidak ditemukan, kembalikan null (kecuali untuk 'skills' dan 'experience', kembalikan []). JANGAN tambahkan field di luar skema.
-    
-    Berikut adalah teks CV-nya:
+    Here is the CV Text:
     ---
     {cv_text}
     ---
-    
+
     JSON Output:
     """
 

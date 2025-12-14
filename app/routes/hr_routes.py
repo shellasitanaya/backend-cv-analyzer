@@ -260,8 +260,6 @@ def get_ranked_candidates(job_id):
         # Hapus filter yang nilainya kosong
         active_filters = {k: v for k, v in filters.items() if v}
         
-        # PENTING: Ganti nama filter 'min_exp' dari frontend
-        # agar cocok dengan nama kolom 'total_experience' di database
         if 'min_exp' in active_filters:
             active_filters['total_experience'] = active_filters.pop('min_exp')
         
