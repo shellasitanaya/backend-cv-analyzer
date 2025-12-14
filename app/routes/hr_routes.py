@@ -256,8 +256,9 @@ def get_ranked_candidates(job_id):
         print(f"!!! ERROR in get_ranked_candidates: {e}") 
         traceback.print_exc()
         return jsonify({"error": f"Gagal mengambil data dari database: {e}"}), 500
+    
 
-@hr_bp.route("/candidates/search", methods=["GET"])
+@hr_bp.route('/candidates/search', methods=['GET'])
 def search_candidates_endpoint():
     try:
         keyword = request.args.get("q", "")
