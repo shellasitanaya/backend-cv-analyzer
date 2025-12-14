@@ -36,3 +36,35 @@ def login():
     except Exception as e:
         print(f"❌ Login error: {str(e)}")
         return jsonify({"message": "Internal server error"}), 500
+    
+@auth_bp.route("/register", methods=["POST"])
+def register():
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"message": "No JSON data provided"}), 400
+
+        name = data.get("name")
+        email = data.get("email")
+        password = data.get("password")
+        role = data.get("role")
+
+        print(f"Register attempt: {name}, {email}, role: {role}")
+
+        if not name or not email or not password or not role:
+            return jsonify({"message": "Name, email, password and role are required"}), 400
+
+        token, error = AuthService.register(name, email, password, role)
+
+        if error:
+            return jsonify({"message": error}), 400
+
+        return jsonify({
+            "success": True,
+            "message": "User registered successfully", 
+            "access_token": token}), 201
+    
+
+    except Exception as e:
+        print(f"Register error: {str(e)}")
+        return jsonify({"message": "Internal server error"}), 500

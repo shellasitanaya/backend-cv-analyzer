@@ -5,19 +5,89 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>{{ candidate.extracted_name or candidate.personal_info.full_name or "Candidate" }} - CV</title>
     <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; max-width:800px; margin-left:auto; margin-right:auto; }
-        header { text-align:center; margin-bottom:30px; }
-        h1 { margin:0; font-size:24px; letter-spacing:1px; }
-        .contact-info { margin-top:6px; color:#555; font-size:0.95em; }
-        .section { margin-top:28px; }
-        h2 { text-transform:uppercase; border-bottom:2px solid #333; padding-bottom:6px; margin-bottom:12px; font-size:14px; }
-        .entry { margin-bottom:18px; }
-        .entry-header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
-        .entry-header h3 { margin:0; font-size:16px; }
-        .entry-header .date { color:#555; font-weight:600; white-space: nowrap; }
-        .entry-subheader { font-weight:600; margin-top:6px; margin-bottom:8px; color:#444; }
-        ul { padding-left:20px; margin-top:6px; }
-        li { margin-bottom:6px; }
+        body { 
+            font-family: Arial, sans-serif; 
+            line-height: 1.6; 
+            margin: 40px; 
+            max-width:800px; 
+            margin-left:auto; 
+            margin-right:auto; 
+        }
+        header { 
+            text-align:center; 
+            margin-bottom:30px; 
+        }
+        h1 { 
+            margin:0; 
+            font-size:24px; 
+            letter-spacing:1px; 
+        }
+        .contact-info { 
+            margin-top:6px; 
+            color:#555; 
+            font-size:0.95em; 
+        }
+        .section { 
+            margin-top:28px; 
+        }
+        /* HAPUS border-bottom dari h2 dan pindahkan ke section-header */
+        h2 { 
+            text-transform:uppercase; 
+            /* HAPUS: border-bottom:2px solid #333; */
+            padding-bottom:0; /* HAPUS padding bottom */
+            margin-bottom:0; /* HAPUS margin bottom */
+            font-size:14px; 
+        }
+        .entry { 
+            margin-bottom:18px; 
+        }
+        .entry-header { 
+            display:flex; 
+            justify-content:space-between; 
+            align-items:baseline; 
+            gap:12px; 
+        }
+        .entry-header h3 { 
+            margin:0; 
+            font-size:16px; 
+        }
+        .entry-header .date { 
+            color:#555; 
+            font-weight:600; 
+            white-space: nowrap; 
+        }
+        .entry-subheader { 
+            font-weight:600; 
+            margin-top:6px; 
+            margin-bottom:8px; 
+            color:#444; 
+        }
+        ul { 
+            padding-left:20px; 
+            margin-top:6px; 
+        }
+        li { 
+            margin-bottom:6px; 
+        }
+        .section-header-container {
+            margin-bottom: 12px;
+        }
+        .section-header-with-gpa {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px; /* Kurangi margin bottom */
+        }
+        .gpa-header {
+            color: #555; /* Ubah warna agar match dengan template modern */
+            font-size: 14px;
+            font-weight: 600; /* Match dengan style modern */
+        }
+        /* TAMBAHKIN style untuk divider yang memanjang penuh */
+        .section-divider {
+            border-bottom: 2px solid #333;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -34,28 +104,32 @@
         </p>
     </header>
 
-    {% if candidate.summary %}
-    <div class="section">
+ {% if candidate.summary %}
+<div class="section">
+    <div class="section-header-container">
         <h2>Professional Summary</h2>
-        {% if candidate.summary is string %}
-            <p>{{ candidate.summary }}</p>
-        {% elif candidate.summary is iterable %}
-            {% for line in candidate.summary %}
-                {% if line and line|string|trim %}<p>{{ line }}</p>{% endif %}
-            {% endfor %}
-        {% else %}
-            <p>{{ candidate.summary }}</p>
-        {% endif %}
+        <div class="section-divider"></div>
     </div>
+    {% if candidate.summary is string %}
+        <p>{{ candidate.summary }}</p>
+    {% elif candidate.summary is iterable %}
+        {% for line in candidate.summary %}
+            {% if line and line|string|trim %}<p>{{ line }}</p>{% endif %}
+        {% endfor %}
+    {% else %}
+        <p>{{ candidate.summary }}</p>
     {% endif %}
+</div>
+{% endif %}
 
-    <!-- WORK EXPERIENCE - COMPLETELY FIXED VERSION -->
     {% if candidate.work_experience and candidate.work_experience|length > 0 %}
-    <div class="section">
+<div class="section">
+    <div class="section-header-container">
         <h2>Work Experience</h2>
-        {% for exp in candidate.work_experience %}
+        <div class="section-divider"></div>
+    </div>
+    {% for exp in candidate.work_experience %}
             <div class="entry">
-                <!-- Job Title and Date -->
                 <div class="entry-header">
                     <h3>
                         {% if exp.job_title and exp.job_title.strip() %}
@@ -73,14 +147,12 @@
                     {% endif %}
                 </div>
                 
-                <!-- Company Name - Show only if not empty -->
                 {% if exp.company_name and exp.company_name.strip() %}
                 <div class="entry-subheader">
                     {{ exp.company_name }}
                 </div>
                 {% endif %}
                 
-                <!-- Description -->
                 {% if exp.description %}
                     {% if exp.description is string %}
                         <ul>
@@ -107,37 +179,46 @@
     </div>
     {% endif %}
 
-    <!-- EDUCATION - COMPLETELY FIXED VERSION -->
-    {% if candidate.education and candidate.education|length > 0 %}
-    <div class="section">
-        <h2>Education</h2>
-        {% for edu in candidate.education %}
-            <div class="entry">
-                <div class="entry-header">
-                    <h3>
-                        {% if edu.degree and edu.degree.strip() %}
-                            {{ edu.degree }}
-                        {% else %}
-                            Education
-                        {% endif %}
-                    </h3>
-                    {% if edu.graduation_year and edu.graduation_year.strip() %}
-                    <div class="date">{{ edu.graduation_year }}</div>
-                    {% endif %}
-                </div>
-                <div class="entry-subheader">
-                    {% if edu.university and edu.university.strip() %}
-                        {{ edu.university }}
-                    {% endif %}
-                    {% if edu.major and edu.major.strip() %} - {{ edu.major }}{% endif %}
-                </div>
-            </div>
-        {% endfor %}
+{% if candidate.education and candidate.education|length > 0 %}
+<div class="section">
+    <div class="section-header-container">
+        <div class="section-header-with-gpa">
+            <h2>Education</h2>
+            {% if candidate.education[0].gpa and candidate.education[0].gpa.strip() %}
+                <div class="gpa-header">GPA: {{ candidate.education[0].gpa }}</div>
+            {% endif %}
+        </div>
+        <div class="section-divider"></div>
     </div>
-    {% endif %}
+    {% for edu in candidate.education %}
+        <div class="entry">
+            <div class="entry-header">
+                <h3>
+                    {% if edu.degree and edu.degree.strip() %}
+                        {{ edu.degree }}
+                    {% else %}
+                        Education
+                    {% endif %}
+                </h3>
+                {% if edu.graduation_year and edu.graduation_year.strip() %}
+                <div class="date">{{ edu.graduation_year }}</div>
+                {% endif %}
+            </div>
+            <div class="entry-subheader">
+                {% if edu.university and edu.university.strip() %}
+                    {{ edu.university }}
+                {% endif %}
+                {% if edu.major and edu.major.strip() %} - {{ edu.major }}{% endif %}
+            </div>
+        </div>
+    {% endfor %}
+</div>
+{% endif %}
 
     <div class="section">
+    <div class="section-header-container">
         <h2>Skills</h2>
+        <div class="section-divider"></div>
         <ul>
             {% if candidate.skills is string %}
                 {% for s in candidate.skills.split(',') %}

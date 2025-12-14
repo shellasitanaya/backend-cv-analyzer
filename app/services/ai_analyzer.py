@@ -1,21 +1,51 @@
-import spacy
+import os
 import re
+import json
 import pprint
-import datetime
 import warnings
+import datetime
+from typing import List, Dict, Union
+import spacy
+from spacy.language import Language
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from spacy.language import Language
-from typing import List, Dict, Union
+from dotenv import load_dotenv
+import google.generativeai as genai
+
 
 try:
     from transformers import AutoTokenizer, AutoModelForTokenClassification, pipeline
     import torch
-    warnings.filterwarnings("ignore", "Some weights of the model were not initialized")
 except ImportError:
-    print("ERROR: Pustaka 'transformers' atau 'torch' tidak ditemukan. Harap install dengan 'pip install transformers torch'")
+    print("ERROR: transformers/torch missing. Install via: pip install transformers torch")
+    pass
 
-# Inisialisasi NER Pipeline menggunakan BERT Indonesia
+# ===============================================
+# 1. INITIALIZATION
+# ===============================================
+
+load_dotenv()
+api_key = os.getenv("GEMINI_API_KEY")
+
+if api_key:
+    genai.configure(api_key=api_key)
+    print("--- Gemini configured. ---")
+else:
+    print("ERROR: GEMINI_API_KEY not found in .env")
+
+# --- 2. DAFTAR SKILL  ---
+BUSINESS_ANALYST_SKILLS = [
+    "Business Process Modeling", "Requirement Gathering", "SAP", "ERP", "SQL", 
+    "Finance", "Communication", "Analytical Thinking", "Negotiation", 
+    "Stakeholder Management", "Project Management", "Agile", "Scrum",
+]
+DATA_ENGINEER_SKILLS = [
+    "Python", "SQL", "ETL", "Data Warehousing", "Spark", "Airflow", 
+    "Problem Solving", "Analytical Thinking", "Data-driven", "AWS", 
+    "GCP", "Tableau", "Power BI",
+]
+
+# Load BERT Indonesian NER
 NER_INDONESIA_PIPELINE = None
 try:
     model_name = "cahya/bert-base-indonesian-NER"
@@ -23,15 +53,15 @@ try:
     model = AutoModelForTokenClassification.from_pretrained(model_name)
     NER_INDONESIA_PIPELINE = pipeline(
         "ner", 
-        model=model, 
+        model=model,
         tokenizer=tokenizer,
-        aggregation_strategy="simple" 
+        aggregation_strategy="simple"
     )
-    print(f"--- Model NER Indonesia '{model_name}' (Hugging Face) berhasil dimuat. ---")
+    print(f"--- BERT NER Indonesia '{model_name}' loaded. ---")
 except Exception as e:
-    print(f"ERROR: Gagal memuat model NER Indonesia: {e}")
+    print(f"ERROR loading NER model: {e}")
 
-# # Daftar kata kunci skill untuk dicari
+# Skill keywords (for fallback mode)
 SKILL_KEYWORDS = [
     'python', 'java', 'c++', 'javascript', 'react', 'reactjs', 'node.js', 'nodejs',
     'flask', 'django', 'spring boot', 'html', 'css', 'tailwind',
@@ -42,34 +72,128 @@ SKILL_KEYWORDS = [
 ]
 
 
+# ===============================================
+# 2. UTILITY FUNCTIONS (Fallback Parser)
+# ===============================================
+
 def normalize_name(name: str) -> str:
-    """Normalisasi nama: kapitalisasi tiap kata, kecuali singkatan full uppercase."""
     if not name:
         return None
     words = name.split()
-    normalized_words = []
+    output = []
     for w in words:
         if w.isupper():
-            normalized_words.append(w)
+            output.append(w)
         else:
-            normalized_words.append(w.capitalize())
-    return " ".join(normalized_words)
-
+            output.append(w.capitalize())
+    return " ".join(output)
 
 def extract_name_with_fallback(text):
-    # cari baris sebelum email
     lines = text.strip().splitlines()
     for i, line in enumerate(lines):
-        if re.search(r'@', line) or re.search(r'\d{9,}', line):  # baris email/phone
+        if re.search(r'@', line) or re.search(r'\d{9,}', line):
             if i > 0:
                 candidate = lines[i-1].strip()
-                # pastikan bukan "Member of..." atau kata teknis
                 if (len(candidate.split()) >= 2 and 
                     not re.search(r'(Member|Division|Tech Stack|github|linkedin)', candidate, re.IGNORECASE)):
                     return candidate
     return None
 
-def parse_candidate_info(text, required_skills=[]):
+
+# ===============================================
+# 3. AI FIRST, THEN FALLBACK PARSER
+# ===============================================
+
+# --- 3. FUNGSI PARSING UTAMA (PAKE AI) ---
+
+def parse_candidate_info(cv_text, required_skills=[]):
+    """
+    Mengekstrak info kandidat menggunakan Model AI (Gemini)
+    untuk mendapatkan hasil yang jauh lebih akurat daripada Regex.
+    """
+    
+    # Definisikan model
+    try:
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
+    except Exception as e:
+        print(f"ERROR: Tidak bisa memuat model Gemini: {e}")
+        return {} 
+
+    # Ini adalah struktur JSON yang WAJIB dipatuhi oleh sisa aplikasi Anda.
+    # AI akan kita paksa untuk mengikuti skema ini.
+    json_schema = {
+        "name": "Nama lengkap kandidat (string)",
+        "email": "Email kandidat (string, null jika tidak ada)",
+        "phone": "Nomor telepon kandidat (string, null jika tidak ada)",
+        "gpa": "IPK sebagai angka float (float, null jika tidak ada)",
+        "education": "Tingkat pendidikan (string, misal: S1, S2, null jika tidak ada)",
+        # --- PERUBAHAN DI SINI ---
+        "skills": ["skill 1", "skill 2"], # List SEMUA skill yang ditemukan di CV (bukan hanya yang cocok)
+        # -------------------------
+        "experience": ["Jabatan 1 di Perusahaan 1 (Tanggal 1 - Tanggal 2)", "Jabatan 2 (Tanggal 3 - Tanggal 4)"], # List detail pengalaman
+        "total_experience": 0 # Total tahun pengalaman sebagai ANGKA INTEGER
+    }
+    
+    # Buat Prompt (Instruksi) untuk AI
+    prompt = f"""
+    Anda adalah asisten HR AI yang sangat teliti. Tugas Anda adalah mengekstrak informasi dari teks CV berikut.
+    Kembalikan jawaban HANYA dalam format JSON yang valid, TANPA teks tambahan di awal atau akhir.
+    
+    Skema JSON yang WAJIB Anda ikuti:
+    {json.dumps(json_schema, indent=2)}
+    
+    Instruksi Penting:
+    1.  **name**: Ekstrak nama lengkap orang tersebut.
+    2.  **gpa**: Cari IPK (GPA) dan ubah menjadi float (misal: 3.37). Jika tidak ada, kembalikan null.
+    3. **education**": "Tingkat pendidikan DAN jurusan (string, contoh: 'S1 Computer Science', 'D3 Teknik Informatika', null jika tidak ada)",
+    
+    # --- PERUBAHAN DI SINI ---
+    4.  **skills**: Ekstrak SEMUA skill (keahlian teknis atau soft skill) yang Anda temukan di CV. Kembalikan sebagai sebuah list string. Contoh: ["Python", "SQL", "Tableau", "Leadership", "Communication"].
+    # -------------------------
+    
+    5.  **experience**: Ekstrak setiap pengalaman kerja sebagai SATU string per pekerjaan, gabungkan jabatan, perusahaan (jika ada), dan tanggal. Contoh: ["Business Analyst di CV. Nur Cahaya Pratama (May 2023–NOW)", "Data Analyst di UD Bangkit (May 2022–May 2023)"].
+    6.  **total_experience**: Hitung total tahun pengalaman kerja. 
+        Jika kandidat memiliki banyak pekerjaan yang tumpang tindih. Jangan jumlahkan durasi setiap proyek. 
+        Sebaliknya, tentukan tanggal pekerjaan paling awal (contoh: 2005) dan tanggal pekerjaan terakhir (contoh: 2025). 
+        Hitung total rentang karirnya (contoh: 2025 - 2005 = 20). 
+        Kembalikan sebagai SATU ANGKA INTEGER. Gunakan tahun 2025 sebagai tahun "NOW" atau "PRESENT".
+    7.  Jika sebuah field tidak ditemukan, kembalikan null (kecuali untuk 'skills' dan 'experience', kembalikan []). JANGAN tambahkan field di luar skema.
+    
+    Berikut adalah teks CV-nya:
+    ---
+    {cv_text}
+    ---
+    
+    JSON Output:
+    """
+
+    # 4. Panggil API
+    try:
+        print(f"[DEBUG] Memanggil API Gemini untuk parsing...")
+        # (Konfigurasi untuk memastikan output JSON)
+        generation_config = genai.GenerationConfig(
+            response_mime_type="application/json"
+        )
+        response = model.generate_content(prompt, generation_config=generation_config)
+        
+        # 5. Parse Respon JSON
+        parsed_data = json.loads(response.text)
+        
+        # Pastikan semua key ada untuk menghindari error di backend
+        final_data = json_schema.copy()
+        final_data.update(parsed_data)
+        
+        return final_data
+
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Gagal mem-parse JSON dari Gemini: {e}")
+        print(f"Response mentah: {response.text}")
+        return json_schema # Kembalikan skema kosong
+    except Exception as e:
+        print(f"ERROR: Terjadi kesalahan saat memanggil API Gemini: {e}")
+        return json_schema # Kembalikan skema kosong
+    
+def parse_candidate_info_2(text, required_skills=[]):
     """
     Mengekstrak informasi terstruktur:
     - Nama: Menggunakan BERT NER Indonesia.
@@ -189,171 +313,105 @@ def parse_candidate_info(text, required_skills=[]):
     return extracted_data
 
 
+# --- 4. FUNGSI SCORING (TIDAK BERUBAH) ---
 def calculate_match_score(cv_text, job_desc_text):
     """Menghitung skor kecocokan antara teks CV dan deskripsi pekerjaan."""
-    if not cv_text or not job_desc_text: return 0.0
-    # Stop words tetap menggunakan 'english' karena TfidfVectorizer tidak memiliki stop words bawaan bahasa Indonesia
+    if not cv_text or not job_desc_text:
+        return 0.0
+    
     documents = [cv_text, job_desc_text]
-    tfidf = TfidfVectorizer(stop_words='english')
-    tfidf_matrix = tfidf.fit_transform(documents)
-    cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
-    score = cosine_sim[0][0]
-    return round(score * 100, 2)
-    
-# --- TESTING ---
-if __name__ == '__main__':
-    # Teks CV yang sama untuk diuji
-    sample_cv_text = """
-    CHARLES WIJAYA
+    try:
+        tfidf = TfidfVectorizer(stop_words="english")
+        tfidf_matrix = tfidf.fit_transform(documents)
+        cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+        score = cosine_sim[0][0]
+        return round(score * 100, 2)
+    except ValueError as e:
+        print(f"Error TfidfVectorizer (mungkin CV kosong): {e}")
+        return 0.0
 
-Member of Information System Department
-BEM (Badan Eksekutif Mahasiswa) is an organization dedicated to fostering the growth of students at Petra Christian
-University and overseeing extracurricular activities within PCU. I am honored to have been entrusted with the role of member
-of Information Systems within the BEM organization. Our mission, within the Information Systems department, is to develop
-systems that facilitate both internal and external activities of the organization. For instance, this involves creating websites to
-streamline bureaucratic processes within our university and enhancing administrative tasks within the organization.The
-Information Systems team within BEM will be utilizing frameworks for both backend and frontend development, specifically
-Laravel and ReactJS.
+# ===============================================
+# 5. AI SEMANTIC MATCH SCORING
+# ===============================================
 
-081938363287 | charleswijaya04@gmail.com | https://www.linkedin.com/in/charles-wijaya-653955285/
+def get_ai_match_score(cv_text, jd_text):
+    schema = {
+        "match_score": 0,
+        "reasoning": "",
+        "matched_skills": [],
+        "missing_skills": []
+    }
 
-Dukuh Kupang Timur XV / 60
+    prompt = f"""
+    Anda adalah Head of Talent Acquisition.
+    Bandingkan CV berikut dan JD berikut.
 
-I am a Data Science and Analytics student at Petra Christian University with expertise in data analysis, machine
-learning, and software development. I have experience in processing, analyzing, and visualizing data using
-programming languages such as Python, SQL, and R. Additionally, I have experience in application development
-using backend frameworks like Laravel and Node.js, as well as frontend frameworks like React, Vue.js, Tailwind,
-and Bootstrap. I am passionate about continuously learning and developing innovative solutions in the fields of
-data and technology.
+    Kembalikan hanya JSON:
 
-Informatics Rally Games and Logic 2023
-Feb 2023 - Nov 2023
+    {json.dumps(schema, indent=2)}
 
-Member of IT Game Division
-Informatics Rally Games and Logic 2023, a dynamic competition where participants have the chance to play and enjoy a
-variety of games developed by students. In this event, students have created and developed their own games using platforms
-like Unity, showcasing their creativity and technical skills. As a contributor to this initiative, I have developed one of the featured games,   
-focusing on delivering an engaging and innovative gaming experience.
+    CV:
+    {cv_text}
 
-Work Experiences
+    JD:
+    {jd_text}
 
-Petra Christian University
-Jul 2023 - Present
-
-Assistant Lecturer
-I am deeply appreciative of the chance to serve as an Assistant Lecturer at Petra Christian University. In this role, I have
-actively contributed by supporting faculty members in teaching students who face difficulties in certain subjects. By providing
-additional guidance, I aim to help students overcome their challenges and enhance their understanding of the material. This
-collaborative effort not only supports the teaching staff but also enriches the students' learning experience, ultimately
-contributing to their academic success.
-
-Petra Christian University
-Jul 2024 - Present
-
-Lab Assistant
-I work as a lab assistant at Universitas Kristen Petra, where my primary responsibilities include managing the laboratory and handling
-administrative tasks to support academic activities. In this role, I ensure that all lab equipment functions properly and is ready for use,      
-while also helping maintain a conducive learning environment. Additionally, I assist lecturers with administrative tasks such as preparing       
-course materials, tracking student attendance, and assisting in report preparation. Through this role, I have developed skills in
-management, coordination, and improving operational efficiency in the lab.
-
-Education Level
-
-UK Petra - Jl. Siwalankerto No.121-131, Siwalankerto, Kec. Wonocolo, Surabaya,
-Jawa Timur 60236
-
-Jul 2022 - Jul 2026 (Expected)
-
-Bachelor Degree in Petra Christian University, 3.97/4.00
+    JSON:
     """
-    
-    print("\n--- Menguji Fungsi Parsing Info dengan Model NER Indonesia (BERT) ---")
-    parsed_info = parse_candidate_info(sample_cv_text)
-    
-    print("\nHasil Parsing:")
-    pprint.pprint(parsed_info)
 
-    from typing import Dict, List, Union
+    try:
+        model = genai.GenerativeModel("models/gemini-2.5-flash")
+        resp = model.generate_content(prompt, generation_config=genai.GenerationConfig(
+            response_mime_type="application/json"
+        ))
+        return json.loads(resp.text)
+    except:
+        return schema
 
-# Muat model bahasa Inggris dari spaCy - pindahkan ke bagian atas sebelum fungsi
-try:
-    nlp: Language = spacy.load('en_core_web_sm')
-except OSError:
-    print("Model 'en_core_web_sm' tidak ditemukan. Jalankan 'python -m spacy download en_core_web_sm'")
-    nlp = None
 
-# Daftar sederhana kata kunci skill untuk dicari
-SKILL_KEYWORDS: List[str] = [
-    'python', 'java', 'c++', 'javascript', 'react', 'reactjs', 'node.js', 'nodejs',
-    'flask', 'django', 'spring boot', 'html', 'css', 'tailwind',
-    'sql', 'mysql', 'postgresql', 'mongodb', 'database',
-    'docker', 'git', 'aws', 'api', 'rest api', 'machine learning',
-    'data analysis', 'data science', 'business intelligence', 'seo',
-    'digital marketing', 'content marketing', 'sem', 'google analytics'
-]
-
-def check_ats_friendliness(text: str) -> Dict[str, Union[Dict[str, bool], List[str]]]:
-    """
-    Melakukan pengecekan dasar keramahan ATS pada teks CV.
-    
-    Args:
-        text (str): Teks dari konten CV.
-        
-    Returns:
-        Dict: Hasil pengecekan ATS.
-    """
+# ===============================================
+# 6. ATS CHECK
+# ===============================================
+def check_ats_friendliness(text: str):
     text_lower = text.lower()
     return {
         "common_sections": {
-            "experience": "pengalaman kerja" in text_lower or "experience" in text_lower,
-            "education": "pendidikan" in text_lower or "education" in text_lower,
-            "skills": "keterampilan" in text_lower or "skills" in text_lower
+            "experience": "experience" in text_lower or "pengalaman" in text_lower,
+            "education": "education" in text_lower or "pendidikan" in text_lower,
+            "skills": "skills" in text_lower or "keterampilan" in text_lower,
         },
         "contact_info": {
-            "email_found": bool(re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', text)),
-            "phone_found": bool(re.search(r'(\+62|0)8[1-9][0-9]{7,10}\b', text))
+            "email_found": bool(re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", text)),
+            "phone_found": bool(re.search(r"(\+62|0)8[1-9][0-9]{7,10}\b", text)),
         },
         "file_format_notes": [
-            "Pastikan file tidak menggunakan format dua kolom.",
-            "Hindari penggunaan gambar, grafik, atau ikon yang berlebihan."
-        ]
+            "Jangan gunakan dua kolom.",
+            "Hindari gambar atau ikon.",
+        ],
     }
 
-def analyze_keywords(cv_text: str, job_desc_text: str) -> Dict[str, Union[List[str], str]]:
-    """
-    Menganalisis dan membandingkan kata kunci antara CV dan deskripsi pekerjaan.
-    
-    Args:
-        cv_text (str): Teks dari konten CV.
-        job_desc_text (str): Teks dari deskripsi pekerjaan.
-        
-    Returns:
-        Dict: Hasil analisis kata kunci.
-    """
-    if not nlp:
-        return {"error": "Model spaCy tidak dimuat"}
 
-    cv_text_lower = cv_text.lower()
-    doc = nlp(job_desc_text)
-    
-    # Menggunakan set comprehension untuk efisiensi
-    job_keywords = {
-        token.text.lower() for token in doc 
-        if token.pos_ in ['NOUN', 'PROPN'] 
-        and len(token.text) > 2 
-        and token.text.lower() not in ['experience', 'knowledge', 'responsibilities', 'requirements']
+# ===============================================
+# 7. KEYWORD ANALYSIS
+# ===============================================
+def analyze_keywords(cv_text: str, jd_text: str):
+    nlp = spacy.load("en_core_web_sm")
+    doc = nlp(jd_text)
+    cv_lower = cv_text.lower()
+
+    keywords = {
+        token.text.lower()
+        for token in doc 
+        if token.pos_ in ["NOUN", "PROPN"] and len(token.text) > 2
     }
-    
-    # Menambahkan skill dari daftar jika ada di deskripsi pekerjaan
-    job_keywords.update(skill for skill in SKILL_KEYWORDS if skill in job_desc_text.lower())
 
-    matched_keywords = sorted({kw for kw in job_keywords if kw in cv_text_lower})
-    missing_keywords = sorted({kw for kw in job_keywords if kw not in cv_text_lower})
+    # Add skill keywords
+    keywords.update([s for s in SKILL_KEYWORDS if s in jd_text.lower()])
 
-    return {
-        "matched_keywords": matched_keywords,
-        "missing_keywords": missing_keywords
-    }
+    matched = sorted([kw for kw in keywords if kw in cv_lower])
+    missing = sorted([kw for kw in keywords if kw not in cv_lower])
+
+    return {"matched_keywords": matched, "missing_keywords": missing}
 
 def fallback_parse_candidate_info(text):
     """
@@ -438,46 +496,3 @@ def fallback_parse_candidate_info(text):
 
     print(f"✅ Fallback parsing completed - Language: {extracted_data['language']}")
     return extracted_data
-
-# if __name__ == '__main__':
-#     sample_cv_text = """
-#     Budi Santoso
-#     A passionate software engineer based in Jakarta.
-#     Email: budi.santoso@email.com, Phone: +6281234567890
-
-#     Experience:
-#     - Software Developer at PT. Cipta Solusi (2022 - Present)
-#       Developed a web application using Python and Flask.
-#       Managed SQL database and created REST API.
-    
-#     Skills:
-#     - Programming: Java, Python, JavaScript
-#     - Frameworks: ReactJS, Flask
-#     - Databases: MySQL
-    
-#     Education:
-#     - S1 Teknik Informatika, Universitas Gadjah Mada
-#     """
-
-#     sample_job_description = """
-#     We are hiring a Python Developer.
-#     Must have experience with Flask framework and REST API development.
-#     Knowledge of SQL is required. ReactJS is a plus. Docker is nice to have.
-#     """
-
-#     print("--- 1. Menguji Fungsi Parsing Info Kandidat ---")
-#     pprint.pprint(parse_candidate_info(sample_cv_text))
-#     print("\n" + "="*40 + "\n")
-
-#     print("--- 2. Menguji Fungsi Scoring Kecocokan ---")
-#     score = calculate_match_score(sample_cv_text, sample_job_description)
-#     print(f"SKOR KECOCOKAN: {score}%")
-#     print("\n" + "="*40 + "\n")
-
-#     print("--- 3. Menguji Fungsi ATS Check ---")
-#     pprint.pprint(check_ats_friendliness(sample_cv_text))
-#     print("\n" + "="*40 + "\n")
-
-#     print("--- 4. Menguji Fungsi Analisis Keyword ---")
-#     pprint.pprint(analyze_keywords(sample_cv_text, sample_job_description))
-#     print("\n" + "="*40 + "\n")

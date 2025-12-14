@@ -13,14 +13,17 @@ class Candidate(db.Model):
     name = db.Column(db.String(255))
     email = db.Column(db.String(255))
     phone = db.Column(db.String(50))
+    gpa = db.Column(db.Numeric(5, 2))
     match_score = db.Column(db.Numeric(5, 2))
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     education = db.Column(db.Text, nullable=True)
     experience = db.Column(db.Text, nullable=True)
+    total_experience = db.Column(db.Integer, nullable=True)
 
     status = db.Column(db.Enum("processing", "passed_filter", "rejected", name="candidate_status"), default="processing")
     rejection_reason = db.Column(db.String(255))
+    scoring_reason = db.Column(db.Text, nullable=True)
 
     job = db.relationship("Job", back_populates="candidates")
     candidate_skills = db.relationship("CandidateSkill", back_populates="candidate")

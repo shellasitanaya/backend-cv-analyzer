@@ -1,60 +1,37 @@
 from app.extensions import db
-from app.models import Job, Candidate, GeneratedCV, CV, Analysis, User
-from datetime import datetime
-import uuid
-import os
-
+from app.models import Job, Candidate, GeneratedCV, Skill, CandidateSkill, CV, Analysis, User
+import json
 
 def get_all_jobs():
-    """Ambil semua data pekerjaan."""
+    """Ambil semua data pekerjaan, diubah ke dict."""
     jobs = Job.query.order_by(Job.created_at.desc()).all()
     return [job_to_dict(j) for j in jobs]
 
 
+
 def get_job_by_id(job_id):
-    """Ambil satu job berdasarkan ID."""
+    """
+    Ambil satu job berdasarkan ID.
+    [FIX] Mengembalikan OBJEK SQLAlchemy, bukan dict.
+    Route 'upload_and_process_cvs' Anda membutuhkan objek untuk mengakses job.min_gpa.
+    """
     job = Job.query.get(job_id)
-    return job_to_dict(job) if job else None
+    return job # Mengembalikan objek, bukan job_to_dict(job)
 
 
 def get_all_candidates_for_job(job_id, filters={}):
-    """Ambil semua kandidat untuk satu job dengan filter opsional."""
+    """
+    Ambil semua kandidat untuk satu job yang statusnya 'passed_filter'.
+    [FIX] Menghapus filter GPA lama, karena filter itu terjadi di route
+    dan kolom 'structured_profile_json' sudah tidak ada.
+    """
     query = Candidate.query.filter_by(job_id=job_id, status='passed_filter')
-
-    # Contoh: jika ingin filter min_gpa dari structured_profile_json
-    if 'min_gpa' in filters:
-        # Gunakan filter JSON dengan SQLAlchemy text (jika perlu)
-        from sqlalchemy import text
-        query = query.filter(
-            text(f"JSON_EXTRACT(structured_profile_json, '$.gpa') >= {filters['min_gpa']}")
-        )
-
+    
     candidates = query.order_by(Candidate.match_score.desc()).all()
     return [candidate_to_dict(c) for c in candidates]
 
 
-def save_candidate(job_id, data):
-    """Simpan data kandidat ke database."""
-    candidate = Candidate(
-        job_id=job_id,
-        original_filename=data.get('original_filename'),
-        storage_path=data.get('storage_path'),
-        extracted_name=data.get('name'),
-        extracted_email=data.get('email'),
-        extracted_phone=data.get('phone'),
-        match_score=data.get('score'),
-        status=data.get('status', 'processing'),
-        rejection_reason=data.get('rejection_reason'),
-        structured_profile_json=data.get('structured_profile') or {}
-    )
-    db.session.add(candidate)
-    try:
-        db.session.commit()
-        return candidate.id
-    except Exception as e:
-        db.session.rollback()
-        print(f"Database error in save_candidate: {e}")
-        return None
+
 
 def save_generated_cv(original_cv_id: int, data: dict) -> int:
     """Menyimpan data CV yang di-generate ke tabel GeneratedCVs (ORM)."""
@@ -221,20 +198,150 @@ def job_to_dict(job: Job):
     }
 
 
+# Di databases.py
+
 def candidate_to_dict(c: Candidate):
+    
+    # PERBAIKAN 1: Baca dari relasi 'candidate_skills'
+    # c.candidate_skills adalah list [CandidateSkill, CandidateSkill]
+    # cs.skill adalah objek Skill
+    # cs.skill.skill_name adalah string nama skill-nya
+    skills_list = [cs.skill.skill_name for cs in c.candidate_skills] if c.candidate_skills else []
+    
+    # PERBAIKAN 2: Konversi string JSON 'experience' kembali ke list
+    experience_list = []
+    if c.experience:
+        try:
+            experience_list = json.loads(c.experience)
+        except json.JSONDecodeError:
+            experience_list = [c.experience] # Fallback jika datanya teks biasa
+
     return {
         "id": c.id,
         "job_id": c.job_id,
         "original_filename": c.original_filename,
         "storage_path": c.storage_path,
-        "extracted_name": c.extracted_name,
-        "extracted_email": c.extracted_email,
-        "extracted_phone": c.extracted_phone,
-        "match_score": c.match_score,
+        "name": c.name,
+        "email": c.email,
+        "phone": c.phone,
+        "match_score": float(c.match_score) if c.match_score is not None else 0.0,
         "status": c.status,
         "rejection_reason": c.rejection_reason,
-        "structured_profile_json": c.structured_profile_json
+        "gpa": float(c.gpa) if c.gpa is not None else None,
+        "education": c.education,
+        "skills": skills_list,
+        "experience": experience_list,
+        "total_experience": c.total_experience,
+        "scoring_reason": c.scoring_reason
     }
+    
+#  SKILLS
+def get_or_create_skill(skill_name):
+    """Fungsi helper untuk mencari skill atau membuatnya jika belum ada."""
+    if not skill_name:
+        return None
+        
+    skill_name_clean = skill_name.strip().title()
+    
+    # PERBAIKAN: Gunakan 'skill_name', bukan 'name'
+    skill = Skill.query.filter_by(skill_name=skill_name_clean).first()
+    
+    if skill:
+        return skill
+    else:
+        try:
+            # PERBAIKAN: Gunakan 'skill_name', bukan 'name'
+            skill = Skill(skill_name=skill_name_clean)
+            db.session.add(skill)
+            db.session.commit()
+            return skill
+        except Exception as e:
+            db.session.rollback()
+            print(f"Error get_or_create_skill: {e}")
+            return Skill.query.filter_by(skill_name=skill_name_clean).first()
+
+# SAVE CANDIDATE
+def save_candidate(job_id, data):
+    """
+    Simpan data kandidat baru, TERMASUK memproses relasi skills 
+    (menggunakan model CandidateSkill).
+    """
+    
+    skill_strings = data.pop('skills', []) 
+    
+    # PERBAIKAN: Konversi list 'experience' menjadi string JSON
+    experience_list = data.get('experience', [])
+    experience_json_string = json.dumps(experience_list)
+
+    new_candidate = Candidate(
+        job_id=job_id,
+        original_filename=data.get('original_filename'),
+        storage_path=data.get('storage_path'),
+        name=data.get('name'),
+        email=data.get('email'),
+        phone=data.get('phone'),
+        match_score=data.get('score'), 
+        status=data.get('status', 'processing'),
+        rejection_reason=data.get('rejection_reason'),
+        
+        education=data.get('education'),
+        gpa=data.get('gpa'),
+        total_experience=data.get('total_experience'),
+        scoring_reason=data.get('scoring_reason'),
+        experience=experience_json_string 
+    )
+    
+    try:
+        # Simpan kandidat dulu agar dapat ID
+        db.session.add(new_candidate)
+        db.session.commit()
+
+        # 3. Proses skills (setelah kandidat punya ID)
+        if skill_strings:
+            for skill_name in skill_strings:
+                skill_obj = get_or_create_skill(skill_name) 
+                if skill_obj:
+                    # PERBAIKAN: Buat objek relasi CandidateSkill
+                    new_link = CandidateSkill(
+                        candidate_id=new_candidate.id, 
+                        skill_id=skill_obj.id
+                    )
+                    db.session.add(new_link)
+            
+            # Commit lagi untuk menyimpan link skills
+            db.session.commit()
+
+        return new_candidate.id
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"Database error in save_candidate: {e}")
+        return None
+    
+# simpan kandidat dari bulk upload
+# def save_candidate(job_id, data):
+#     """Simpan data kandidat ke database."""
+#     candidate = Candidate(
+#         job_id=job_id,
+#         original_filename=data.get('original_filename'),
+#         storage_path=data.get('storage_path'),
+#         name=data.get('name'),
+#         email=data.get('email'),
+#         phone=data.get('phone'),
+#         match_score=data.get('score'), 
+#         status=data.get('status', 'processing'),
+#         rejection_reason=data.get('rejection_reason'),
+#         education=data.get('education'),
+#         experience=data.get('experience')
+#     )
+#     db.session.add(candidate)
+#     try:
+#         db.session.commit()
+#         return candidate.id
+#     except Exception as e:
+#         db.session.rollback()
+#         print(f"Database error in save_candidate: {e}")
+#         return None
 
 def cv_to_dict(cv: CV):
     """Helper function untuk convert CV object ke dictionary"""

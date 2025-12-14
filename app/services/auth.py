@@ -50,3 +50,50 @@ class AuthService:
             return decoded
         except Exception:
             return None
+        
+    @staticmethod
+    def register(name, email, password, selected_role):
+        """
+        Create new user with the defined role.
+        Return JWT after successful registration.
+        """
+        print(f"📝 Register attempt: name: {name}, email: {email}, role: {selected_role}")
+
+        # Check if email already used
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            print("❌ Email already registered")
+            return None, "Email already registered"
+
+        # Hash password
+        hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
+
+        # Create user
+        user = User(
+            name=name,
+            email=email,
+            password=hashed_password,
+            role=selected_role
+        )
+
+        try:
+            db.session.add(user)
+            db.session.commit()
+            print(f"✅ Registration successful for {email}")
+
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ Registration failed: {e}")
+            return None, "Registration failed"
+
+        # Create token after successful registration
+        access_token = create_access_token(
+            identity=str(user.id),
+            additional_claims={
+                "role": user.role,
+                "email": user.email
+            },
+            expires_delta=timedelta(hours=3)
+        )
+
+        return access_token, None
