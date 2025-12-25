@@ -6,7 +6,7 @@ from sqlalchemy import func, distinct
 
 skills_bp = Blueprint('skills', __name__)
 
-@skills_bp.route('/api/skills/autocomplete', methods=['GET'])
+@skills_bp.route('/autocomplete', methods=['GET'])
 def autocomplete_skills():
     query = request.args.get('q', '').strip().lower()
     

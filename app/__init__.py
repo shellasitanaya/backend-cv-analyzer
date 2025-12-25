@@ -43,7 +43,7 @@ def create_app():
     
     # CV-related routes under /api/cv
     app.register_blueprint(cv_bp, url_prefix="/api/cv")
-    app.register_blueprint(skills_bp, url_prefix="/api/cv/skills")
+    app.register_blueprint(skills_bp, url_prefix="/api/skills")
     app.register_blueprint(experience_bp, url_prefix="/api/cv/experience")
     
     # AI phrasing under /api/ai (separate from CV)
